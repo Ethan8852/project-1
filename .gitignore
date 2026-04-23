@@ -1,0 +1,5 @@
+.vercel
+node_modules/
+*firebase-adminsdk*.json
+google-services.json
+오.하.제 - Google Play package/
