@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compact Todo MVP</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --text: #1e293b;
+            --card: #ffffff;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: var(--card);
+            padding: 24px;
+            border-radius: 16px;
+            shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            border: 1px solid var(--border);
+        }
+
+        header {
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            outline: none;
+            transition: border 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button#add-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .filter-tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+        }
+
+        .tab {
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        ul {
+            list-style: none;
+        }
+
+        li {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        li:last-child {
+            border-bottom: none;
+        }
+
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .todo-text {
+            flex: 1;
+            font-size: 1rem;
+        }
+
+        .todo-text.done {
+            text-decoration: line-through;
+            color: #94a3b8;
+        }
+
+        .del-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            cursor: pointer;
+            font-size: 0.8rem;
+            opacity: 0.5;
+        }
+
+        .del-btn:hover {
+            opacity: 1;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 0;
+            color: #94a3b8;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Quick Task</h1>
+        </header>
+
+        <div class="input-group">
+            <input type="text" id="todo-input" placeholder="무엇을 해야 하나요?" onkeypress="if(event.keyCode==13) addTodo()">
+            <button id="add-btn" onclick="addTodo()">추가</button>
+        </div>
+
+        <div class="filter-tabs">
+            <span class="tab active" onclick="renderTodos('all')">전체</span>
+            <span class="tab" onclick="renderTodos('active')">진행중</span>
+            <span class="tab" onclick="renderTodos('completed')">완료</span>
+        </div>
+
+        <div id="empty" class="empty-state">할 일이 없습니다. 깨끗하네요!</div>
+        <ul id="todo-list"></ul>
+    </div>
+
+    <script>
+        let todos = JSON.parse(localStorage.getItem('my-todos')) || [
+            { id: 1, text: "신규 프로젝트 기획안 작성", done: false },
+            { id: 2, text: "운동 30분 하기", done: true }
+        ];
+
+        function save() {
+            localStorage.setItem('my-todos', JSON.stringify(todos));
+            renderTodos();
+        }
+
+        function addTodo() {
+            const input = document.getElementById('todo-input');
+            if (!input.value.trim()) return;
+
+            todos.push({
+                id: Date.now(),
+                text: input.value.trim(),
+                done: false
+            });
+            input.value = '';
+            save();
+        }
+
+        function toggleTodo(id) {
+            todos = todos.map(t => t.id === id ? { ...t, done: !t.done } : t);
+            save();
+        }
+
+        function deleteTodo(id) {
+            todos = todos.filter(t => t.id !== id);
+            save();
+        }
+
+        function renderTodos(filter = 'all') {
+            const list = document.getElementById('todo-list');
+            const empty = document.getElementById('empty');
+            list.innerHTML = '';
+
+            const filtered = todos.filter(t => {
+                if (filter === 'active') return !t.done;
+                if (filter === 'completed') return t.done;
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                empty.style.display = 'block';
+            } else {
+                empty.style.display = 'none';
+                filtered.forEach(t => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                    <input type="checkbox" class="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodo(${t.id})">
+                    <span class="todo-text ${t.done ? 'done' : ''}">${t.text}</span>
+                    <button class="del-btn" onclick="deleteTodo(${t.id})">삭제</button>
+                `;
+                    list.appendChild(li);
+                });
+            }
+
+            // 탭 스타일 변경
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.toggle('active', tab.innerText.includes(filter === 'all' ? '전체' : filter === 'active' ? '진행중' : '완료'));
+            });
+        }
+
+        // 초기 렌더링
+        renderTodos();
+    </script>
+
+</body>
+
+</html>

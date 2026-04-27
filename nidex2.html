@@ -1145,8 +1145,16 @@ async function tgConnect(){
   // 폴링이 메시지를 소비하지 못하도록 일시 중단
   stopTgPolling();
   try{
-    const r=await fetch(`${TG_API}/getUpdates?limit=100&allowed_updates=%5B%22message%22%5D`);
-    const j=await r.json();
+    // 1. 유효한(확인되지 않은) 업데이트 확인
+    let r=await fetch(`${TG_API}/getUpdates?limit=50&allowed_updates=%5B%22message%22%5D`);
+    let j=await r.json();
+    
+    // 2. 비어있다면 강제로 최신 메시지 1개 확인 (offset=-1)
+    if(j.ok && j.result.length === 0){
+      r=await fetch(`${TG_API}/getUpdates?offset=-1&limit=1&allowed_updates=%5B%22message%22%5D`);
+      j=await r.json();
+    }
+
     if(j.ok&&j.result.length>0){
       const msgs=j.result.filter(u=>u.message&&u.message.chat);
       if(msgs.length>0){
@@ -1304,7 +1312,9 @@ async function loadSync(){
       return false;
     }
     if(state.syncMsgId!==pin.message_id)state.syncMsgId=pin.message_id;
-    const b64=pin.text.slice(nl+1);
+    let b64=pin.text.slice(nl+1);
+    // HTML 태그 제거 (특히 <tg-spoiler>)
+    b64 = b64.replace(/<[^>]*>/g, '').trim();
     const remote=JSON.parse(decodeURIComponent(escape(atob(b64))));
     if(!remote?.savedAt)return false;
     if(remote.savedAt>(state.savedAt||0)){

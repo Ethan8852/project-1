@@ -1,0 +1,11 @@
+node_modules
+*firebase-adminsdk*.json
+google-services.json
+오.하.제 - Google Play package
+.git
+api
+generate-icons.mjs
+package.json
+package-lock.json
+vercel.json
+nidex2.html
