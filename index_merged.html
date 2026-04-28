@@ -1338,6 +1338,24 @@ function handleEditKey(e,id){
 }
 function cancelEdit(){if(!editingId)return;editingId=null;render();}
 
+// ══ 장기업무 인라인 수정 ══
+let longEditingId=null;
+function startLongEdit(id){if(pendingLongComplete[id])return;longEditingId=id;renderLongTasks();}
+function handleLongEditKey(e,id){
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const inp=document.getElementById(`longedit-${id}`);if(!inp)return;
+    const newText=inp.value.trim();if(!newText)return;
+    const t=(state.longTasks||[]).find(t=>t.id===id);if(!t)return;
+    const changed=t.text!==newText;
+    t.text=newText;longEditingId=null;saveState();renderLongTasks();
+    if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+    if(changed)showToast(`<strong>✏️ 수정 완료!</strong> "${escapeHtml(newText)}"`, 'edit');
+  }
+  if(e.key==='Escape'){e.preventDefault();cancelLongEdit();}
+}
+function cancelLongEdit(){if(!longEditingId)return;longEditingId=null;renderLongTasks();}
+
 // ══ 완료 탭 렌더 ══
 function renderDone(){
   const list=document.getElementById('doneList');
@@ -1424,24 +1442,30 @@ function undoComplete(id){
 
 // ══ 삭제 / 별표 ══
 function deleteTask(id){
+  const t=state.tasks.find(t=>t.id===id);
   if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];}
   if(editingId===id)editingId=null;clearInterval(alarmTimers[id]);
   state.tasks=state.tasks.filter(t=>t.id!==id);saveState();render();
   if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+  if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
 }
 function toggleStar(id){
   const t=state.tasks.find(t=>t.id===id);if(!t)return;
   t.starred=!t.starred;saveState();render();
 }
 function deleteDoneTask(id){
+  const t=state.doneTasks.find(t=>t.id===id);
   state.doneTasks=state.doneTasks.filter(t=>t.id!==id);
   saveState();renderDone();updateProgress();
   if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+  if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
 }
 function deleteDoneLongTask(id){
+  const t=(state.doneLongTasks||[]).find(t=>t.id===id);
   state.doneLongTasks=(state.doneLongTasks||[]).filter(t=>t.id!==id);
   saveState();renderDone();
   if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+  if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
 }
 
 // ══ 추가 ══
@@ -1580,7 +1604,7 @@ function renderDayModal(){
             ?`<input class="modal-edit-input" id="medit-td-${t.id}" value="${escapeHtml(t.text)}"
                 onkeydown="handleModalEditKey(event,'today-done',${t.id},-1)" onblur="cancelModalEdit()" onclick="event.stopPropagation()">`
             :`<span class="modal-task-text done-style" onclick="startModalEdit('today-done',${t.id},-1)">${t.starred?'⭐ ':''}${escapeHtml(t.text)}</span>`;
-          return`<div class="modal-task-row" id="mtask-td-${t.id}"><span class="modal-task-dot done"></span>${el}<button class="modal-check-btn done-state" onclick="modalUndoComplete(${t.id})" title="되돌리기">✓</button></div>`;
+          return`<div class="modal-task-row" id="mtask-td-${t.id}"><span class="modal-task-dot done"></span>${el}<button class="modal-check-btn done-state" onclick="modalUndoComplete(${t.id})" title="되돌리기">✓</button><button class="modal-del-btn" onclick="deleteModalDoneTask(${t.id})" title="삭제">×</button></div>`;
         }).join('');
       }
       const todayLong=(state.longTasks||[]).filter(t=>t.stage>0&&t.startDate&&t.startDate<=today);
@@ -1605,7 +1629,7 @@ function renderDayModal(){
             ?`<input class="modal-edit-input" id="medit-ld-${i}" value="${escapeHtml(t.text)}"
                 onkeydown="handleModalEditKey(event,'log-done',-1,${i})" onblur="cancelModalEdit()" onclick="event.stopPropagation()">`
             :`<span class="modal-task-text done-style" onclick="startModalEdit('log-done',-1,${i})">${t.starred?'⭐ ':''}${escapeHtml(t.text)}</span>`;
-          return`<div class="modal-task-row"><span class="modal-task-dot done"></span>${el}</div>`;
+          return`<div class="modal-task-row" id="mlog-d-${i}"><span class="modal-task-dot done"></span>${el}<button class="modal-del-btn" onclick="deleteLogTask('${dateStr}','done',${i})" title="삭제">×</button></div>`;
         }).join('');
       }
       if(log&&log.missed&&log.missed.length>0){
@@ -1616,7 +1640,7 @@ function renderDayModal(){
             ?`<input class="modal-edit-input" id="medit-lm-${i}" value="${escapeHtml(t.text)}"
                 onkeydown="handleModalEditKey(event,'log-missed',-1,${i})" onblur="cancelModalEdit()" onclick="event.stopPropagation()">`
             :`<span class="modal-task-text missed-style" onclick="startModalEdit('log-missed',-1,${i})">${t.starred?'⭐ ':''}${escapeHtml(t.text)}</span>`;
-          return`<div class="modal-task-row"><span class="modal-task-dot missed"></span>${el}</div>`;
+          return`<div class="modal-task-row" id="mlog-m-${i}"><span class="modal-task-dot missed"></span>${el}<button class="modal-del-btn" onclick="deleteLogTask('${dateStr}','missed',${i})" title="삭제">×</button></div>`;
         }).join('');
       }
       if(pastLong.length>0){
@@ -1692,15 +1716,41 @@ function handleModalEditKey(e,type,id,idx){
   if(e.key==='Escape'){e.preventDefault();cancelModalEdit();}
 }
 function deleteModalTask(id){
+  const t=state.tasks.find(t=>t.id===id);
   const el=document.getElementById(`mtask-t-${id}`);
   if(el)el.classList.add('deleting');
   setTimeout(()=>{
     if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];}
     clearInterval(alarmTimers[id]);state.tasks=state.tasks.filter(t=>t.id!==id);
     saveState();render();renderDayModal();renderCal();
+    if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
+  },300);
+}
+function deleteModalDoneTask(id){
+  const t=state.doneTasks.find(t=>t.id===id);
+  const el=document.getElementById(`mtask-td-${id}`);
+  if(el)el.classList.add('deleting');
+  setTimeout(()=>{
+    state.doneTasks=state.doneTasks.filter(t=>t.id!==id);
+    saveState();renderDone();updateProgress();renderDayModal();renderCal();
+    if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
+  },300);
+}
+function deleteLogTask(dateStr,type,idx){
+  if(!state.log[dateStr]||!state.log[dateStr][type])return;
+  const t=state.log[dateStr][type][idx];
+  const elId=type==='done'?`mlog-d-${idx}`:`mlog-m-${idx}`;
+  const el=document.getElementById(elId);if(el)el.classList.add('deleting');
+  setTimeout(()=>{
+    if(!state.log[dateStr]||!state.log[dateStr][type])return;
+    state.log[dateStr][type].splice(idx,1);
+    if((!state.log[dateStr].done||state.log[dateStr].done.length===0)&&(!state.log[dateStr].missed||state.log[dateStr].missed.length===0))delete state.log[dateStr];
+    saveState();renderDayModal();renderCal();
+    if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
   },300);
 }
 function deleteFutureTask(dateStr,idx){
+  const t=state.futureTasks[dateStr]&&state.futureTasks[dateStr][idx];
   const el=document.getElementById(`mtask-f-${idx}`);
   if(el)el.classList.add('deleting');
   setTimeout(()=>{
@@ -1708,6 +1758,7 @@ function deleteFutureTask(dateStr,idx){
     state.futureTasks[dateStr].splice(idx,1);
     if(state.futureTasks[dateStr].length===0)delete state.futureTasks[dateStr];
     saveState();renderDayModal();renderCal();
+    if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
   },300);
 }
 function addDayTask(){
@@ -1953,8 +2004,10 @@ function _doCompleteLong(id){
   if(document.getElementById('panel-done').classList.contains('active'))renderDone();
 }
 function deleteLongTask(id){
+  const t=(state.longTasks||[]).find(t=>t.id===id);
   state.longTasks=(state.longTasks||[]).filter(t=>t.id!==id);
   saveState();renderLongTasks();
+  if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
 }
 function undoLongComplete(id){
   const idx=(state.doneLongTasks||[]).findIndex(t=>t.id===id);if(idx===-1)return;
@@ -1987,12 +2040,16 @@ function renderLongTasks(){
       const cls=(i+1)<t.stage?'s-done':(i+1)===t.stage?'s-active':'';
       return`<div class="long-stage-label ${cls}" onclick="setLongStage(${t.id},${i+1})" title="${l}로 설정">${l}</div>`;
     }).join('');
+    const longTextEl=longEditingId===t.id
+      ?`<input class="task-edit-input" id="longedit-${t.id}" value="${escapeHtml(t.text)}"
+          onkeydown="handleLongEditKey(event,${t.id})" onblur="cancelLongEdit()" onclick="event.stopPropagation()">`
+      :`<div class="task-text" onclick="startLongEdit(${t.id})" title="클릭: 제목 수정">${escapeHtml(t.text)}</div>`;
     return`<div class="long-task-item${isPend?' long-pending':''}" id="longtask-${t.id}">
       ${isPend?'<div class="pending-bar"></div>':''}
       <div class="long-task-top">
         <div class="long-check-btn ${sc}" onclick="advanceLongStage(${t.id})" title="${t.stage===3?'완료 (1초)':'다음 단계'}">${icon}</div>
         <div class="task-info">
-          <div class="task-text">${escapeHtml(t.text)}</div>
+          ${longTextEl}
           <div class="task-time">
             <span class="long-badge">장기업무</span>
             <span class="long-cur-stage s${t.stage}">${['미시작','시작','진행중','마무리'][t.stage]}</span>
@@ -2014,6 +2071,7 @@ function renderLongTasks(){
   }).join('');
   html+='</div>';
   container.innerHTML=html;
+  if(longEditingId){const inp=document.getElementById(`longedit-${longEditingId}`);if(inp){inp.focus();inp.select();}}
 }
 
 // ══ 장기업무 관리 모달 ══
@@ -2097,10 +2155,13 @@ function saveLmgmtDate(e,id,field,type){
   if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
 }
 function lmgmtDelete(id,type){
+  const arr=type==='active'?state.longTasks:state.doneLongTasks;
+  const t=(arr||[]).find(t=>t.id===id);
   if(type==='active'){state.longTasks=(state.longTasks||[]).filter(t=>t.id!==id);renderLongTasks();}
   else{state.doneLongTasks=(state.doneLongTasks||[]).filter(t=>t.id!==id);renderDone();}
   saveState();renderLongMgmtModal();
   if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+  if(t)showToast(`🗑 "<strong>${escapeHtml(t.text)}</strong>" 삭제됨`);
 }
 
 // ══ 간트 차트 ══
@@ -2181,6 +2242,21 @@ function openGanttStagePicker(e,taskId){
 }
 
 // ══ 초기화 ══
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  const lmgmt=document.getElementById('lmgmtModal');
+  if(lmgmt&&lmgmt.classList.contains('active')){
+    if(lmgmtEditInfo){cancelLmgmtEdit();}
+    else{closeLongMgmtModal();}
+    return;
+  }
+  const modal=document.getElementById('dayModal');
+  if(modal&&modal.classList.contains('active')){
+    if(modalEditInfo){cancelModalEdit();}
+    else{closeDayModal();}
+  }
+});
+
 loadState();
 checkDayTransition();
 state.tasks.forEach(scheduleAlarm);
