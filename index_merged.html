@@ -906,6 +906,138 @@
 </style>
 </head>
 <body>
-<!-- 2회차: HTML body 작성 예정 -->
+
+<header>
+  <div class="header-left">
+    <div>
+      <div class="header-title">민재의 하루</div>
+      <div class="header-date" id="headerDate"></div>
+    </div>
+  </div>
+
+  <div class="header-center">
+    <div class="c-logo-wrap" onclick="location.reload()" style="cursor:pointer;" title="새로고침">
+      <span class="clo-em">오</span><span class="clo-nm">늘</span>
+      <span class="clo-dot">·</span>
+      <span class="clo-em">하</span><span class="clo-nm">자</span>
+      <span class="clo-dot">·</span>
+      <span class="clo-em">제</span><span class="clo-nm">발</span>
+    </div>
+    <div class="c-logo-sub">do it today</div>
+  </div>
+
+  <div class="header-right">
+    <span id="clockLabel"></span>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('todo')">할 일 <span id="todoCount"></span></button>
+  <button class="tab-btn" onclick="switchTab('done')">완료 <span id="doneCount"></span></button>
+  <button class="tab-btn" onclick="switchTab('cal')">캘린더</button>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- 할 일 탭 -->
+<div class="tab-panel active" id="panel-todo">
+  <div id="movedNotice" style="display:none" class="moved-notice"></div>
+  <div class="section-label">오늘 할 일 <button class="repeat-task-btn" onclick="openRecurringModal()">🔁 매일반복 설정</button></div>
+  <div class="progress" id="progressText"></div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="task-list" id="taskList"></div>
+  <div id="longTaskSection"></div>
+  <div style="height:120px;"></div>
+</div>
+
+<!-- 완료 탭 -->
+<div class="tab-panel" id="panel-done">
+  <div class="section-label">완료한 일 <span class="sub">체크 아이콘으로 되돌리기</span></div>
+  <div class="task-list" id="doneList"></div>
+  <div style="height:24px;"></div>
+</div>
+
+<!-- 캘린더 탭 -->
+<div class="tab-panel" id="panel-cal">
+  <div class="cal-header">
+    <button class="cal-nav" onclick="moveCal(-1)">‹</button>
+    <div class="cal-header-center">
+      <span id="calTitle"></span>
+      <button class="pdf-btn" onclick="printCal()">🖨 PDF</button>
+    </div>
+    <button class="cal-nav" onclick="moveCal(1)">›</button>
+  </div>
+  <div class="print-title" id="printTitle"></div>
+  <div class="cal-grid" id="calGrid"></div>
+  <div id="ganttSection"></div>
+  <div style="height:24px;"></div>
+</div>
+
+<!-- 입력 영역 (바텀시트) -->
+<div class="add-area" id="addArea">
+  <div class="add-row">
+    <input class="add-input" id="taskInput" placeholder="할 일 입력..." maxlength="300">
+    <button class="add-btn" onclick="addTask(false)">추가</button>
+    <button class="long-toggle-btn" id="longToggleBtn" onclick="toggleLongInput()" title="장기업무 추가">📌</button>
+  </div>
+  <div class="long-add-row" id="longAddRow" style="display:none;">
+    <input class="add-input" id="longTaskInput" placeholder="장기 업무 입력 (일주일~한달)..." maxlength="300"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();submitLongTask();}">
+    <button class="add-btn" style="background:linear-gradient(135deg,var(--accent2),#BDE0FE);" onclick="submitLongTask()">추가</button>
+  </div>
+  <div class="hint">
+    <kbd>Enter</kbd> 추가 &nbsp;·&nbsp; <kbd>Ctrl+Enter</kbd> ⭐ 중요 추가 &nbsp;·&nbsp; 📌 장기업무
+  </div>
+</div>
+
+<!-- 매일반복 모달 -->
+<div class="recurring-overlay" id="recurringOverlay" onclick="closeRecurringModal()"></div>
+<div class="recurring-modal" id="recurringModal">
+  <div class="day-modal-handle"></div>
+  <div class="recurring-modal-hdr">
+    <div class="recurring-modal-title">🔁 매일 자동 등록 할 일 (09:00)</div>
+    <button class="recurring-modal-close" onclick="closeRecurringModal()">×</button>
+  </div>
+  <div class="recurring-modal-body" id="recurringBody"></div>
+  <div class="recurring-add-row">
+    <input class="add-input" id="recurringInput" placeholder="매일 반복할 일 입력..." maxlength="200"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();addRecurringTask();}">
+    <button class="add-btn" style="background:linear-gradient(135deg,var(--accent2),#BDE0FE);" onclick="addRecurringTask()">추가</button>
+  </div>
+</div>
+
+<!-- 장기업무 관리 모달 -->
+<div class="lmgmt-overlay" id="lmgmtOverlay" onclick="closeLongMgmtModal()"></div>
+<div class="lmgmt-modal" id="lmgmtModal">
+  <div class="day-modal-handle"></div>
+  <div class="lmgmt-hdr">
+    <div class="lmgmt-title">📌 장기업무 일정 관리</div>
+    <button class="lmgmt-close" onclick="closeLongMgmtModal()">×</button>
+  </div>
+  <div class="lmgmt-body" id="lmgmtBody"></div>
+</div>
+
+<!-- 날짜 모달 -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeDayModal()"></div>
+<div class="day-modal" id="dayModal">
+  <div class="day-modal-handle"></div>
+  <div class="day-modal-header">
+    <div>
+      <div class="day-modal-title" id="dayModalTitle"></div>
+      <div class="day-modal-type"  id="dayModalType"></div>
+    </div>
+    <button class="day-modal-close" onclick="closeDayModal()">×</button>
+  </div>
+  <div class="day-modal-body" id="dayModalBody"></div>
+  <div class="day-modal-add" id="dayModalAdd" style="display:none;">
+    <input class="add-input" id="dayTaskInput" placeholder="할 일 추가..." maxlength="200"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();addDayTask();}">
+    <button class="add-btn" onclick="addDayTask()">추가</button>
+  </div>
+</div>
+
+<script>
+<!-- 3회차: JS 전반부 작성 예정 -->
+</script>
 </body>
 </html>
