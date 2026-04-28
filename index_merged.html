@@ -1037,7 +1037,443 @@
 </div>
 
 <script>
-<!-- 3회차: JS 전반부 작성 예정 -->
+// ══ 유틸 ══
+function todayStr(){const d=new Date();return`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
+function pad(n){return String(n).padStart(2,'0');}
+function isQuietHours(){const h=new Date().getHours();return h>=22||h<9;}
+function formatTime(ts){const d=new Date(ts);return`${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+function formatAMPM(d){
+  let h=d.getHours();const m=pad(d.getMinutes()),s=pad(d.getSeconds());
+  const ap=h>=12?'PM':'AM';h=h%12||12;return`${ap} ${h}:${m}:${s}`;
+}
+function isOverdue(ts){return Date.now()>ts;}
+function linkify(text){
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank" rel="noopener" onclick="event.stopPropagation()">$1</a>');
+}
+function escapeHtml(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ══ 상태 ══
+let state={
+  tasks:[],doneTasks:[],log:{},futureTasks:{},
+  lastDate:null,nextId:1,movedCount:0,
+  recurringTasks:[],recurringLastDate:null,
+  longTasks:[],doneLongTasks:[],
+  savedAt:0
+};
+let alarmTimers={};
+let pendingComplete={};
+let pendingUndo={};
+let pendingLongUndo={};
+let editingId=null;
+let calYear,calMonth;
+let currentModalDate=null;
+let modalEditInfo=null;
+
+function loadState(){
+  try{
+    const s=localStorage.getItem('ijma_v3');
+    if(s){
+      const p=JSON.parse(s);
+      Object.assign(state,p);
+      if(!Array.isArray(state.tasks))state.tasks=[];
+      if(!Array.isArray(state.doneTasks))state.doneTasks=[];
+      if(!Array.isArray(state.longTasks))state.longTasks=[];
+      if(!Array.isArray(state.doneLongTasks))state.doneLongTasks=[];
+      if(!state.log||typeof state.log!=='object')state.log={};
+      if(!state.futureTasks||typeof state.futureTasks!=='object')state.futureTasks={};
+      if(!state.recurringTasks)state.recurringTasks=[];
+      if(typeof state.nextId!=='number'||isNaN(state.nextId)){
+        state.nextId=(state.tasks.concat(state.doneTasks).reduce((max,t)=>Math.max(max,t.id||0),0))+1;
+      }
+    }
+  }catch(e){
+    console.warn('loadState err:',e);
+    state.tasks=state.tasks||[];
+    state.doneTasks=state.doneTasks||[];
+    state.nextId=state.nextId||1;
+  }
+}
+
+function saveState(){
+  state.savedAt=Math.max(state.savedAt||0,Date.now());
+  try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
+}
+
+// ══ 날짜 전환 ══
+function checkDayTransition(){
+  const today=todayStr();
+  if(state.lastDate&&state.lastDate!==today){
+    if(state.doneTasks.length>0){
+      state.log[state.lastDate]={
+        done:state.doneTasks.map(t=>({text:t.text,starred:t.starred})),
+        missed:[]
+      };
+    }
+    const missed=state.tasks.filter(t=>!t.done);
+    const now=Date.now();
+    state.tasks=missed.map(t=>({...t,registeredAt:now,done:false}));
+    state.doneTasks=[];state.movedCount=missed.length;
+    if(state.futureTasks[today]&&state.futureTasks[today].length>0){
+      state.tasks=[...state.tasks,...state.futureTasks[today].map(t=>({...t,registeredAt:now,done:false}))];
+      delete state.futureTasks[today];
+    }
+  }else if(!state.lastDate){
+    state.movedCount=0;if(!state.futureTasks)state.futureTasks={};
+    const t2=todayStr();
+    if(state.futureTasks[t2]&&state.futureTasks[t2].length>0){
+      const now=Date.now();
+      state.tasks=[...state.tasks,...state.futureTasks[t2].map(t=>({...t,registeredAt:now,done:false}))];
+      delete state.futureTasks[t2];
+    }
+  }
+  state.lastDate=today;saveState();
+}
+
+// ══ 헤더 ══
+function updateHeader(){
+  const d=new Date();
+  const days=['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
+  document.getElementById('headerDate').textContent=`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 ${days[d.getDay()]}`;
+  document.getElementById('clockLabel').textContent=formatAMPM(d);
+}
+
+// ══ 탭 전환 ══
+function switchTab(tab){
+  ['todo','done','cal'].forEach((t,i)=>{
+    document.querySelectorAll('.tab-btn')[i].classList.toggle('active',t===tab);
+    document.getElementById(`panel-${t}`).classList.toggle('active',t===tab);
+  });
+  document.getElementById('addArea').style.display=tab==='todo'?'':'none';
+  if(tab==='todo'){render();renderLongTasks();}
+  if(tab==='done')renderDone();
+  if(tab==='cal'){initCal();renderCal();}
+}
+
+// ══ 토스트 ══
+function showToast(msg,type=''){
+  const wrap=document.getElementById('toastWrap');
+  const el=document.createElement('div');
+  el.className='toast'+(type?' '+type:'');el.innerHTML=msg;
+  wrap.appendChild(el);setTimeout(()=>el.remove(),4000);
+}
+
+// ══ 컨페티 ══
+function celebrate(text){
+  const cx=window.innerWidth/2,cy=window.innerHeight/2;
+  const flash=document.createElement('div');flash.className='complete-flash';
+  document.body.appendChild(flash);setTimeout(()=>flash.remove(),800);
+  const colors=['#CDB4DB','#FFC8DD','#FFAFCC','#BDE0FE','#A2D2FF','#FFD6FF','#C8E6FF','#FFB3C6'];
+  for(let i=0;i<55;i++){
+    const el=document.createElement('div');el.className='confetti-piece';
+    const size=5+Math.random()*9,isRibbon=Math.random()>0.5;
+    const angle=Math.random()*Math.PI*2,dist=100+Math.random()*250;
+    const dx=Math.cos(angle)*dist,dy=Math.sin(angle)*dist-120;
+    const dr=(Math.random()-0.5)*720,dur=0.6+Math.random()*0.8;
+    el.style.cssText=`left:${cx}px;top:${cy}px;width:${isRibbon?size*0.4:size}px;height:${isRibbon?size*2.2:size}px;background:${colors[Math.floor(Math.random()*colors.length)]};border-radius:${Math.random()>0.5?'50%':'3px'};--dx:${dx}px;--dy:${dy}px;--dr:${dr}deg;--dur:${dur}s;`;
+    document.body.appendChild(el);setTimeout(()=>el.remove(),dur*1000+100);
+  }
+  showToast(`<strong>🎉 완료!</strong> "${escapeHtml(text)}" 해냈어요!`,'success');
+}
+
+// ══ 알림 타이머 ══
+function scheduleAlarm(task){
+  clearInterval(alarmTimers[task.id]);
+  alarmTimers[task.id]=setInterval(()=>{
+    const t=state.tasks.find(t=>t.id===task.id);
+    if(!t||t.done){clearInterval(alarmTimers[task.id]);return;}
+    if(isOverdue(t.registeredAt)&&!isQuietHours()){
+      showToast(`<strong>🔔 재알림</strong> — "${escapeHtml(t.text)}" 아직 완료 안 하셨어요.`);
+    }
+  },60*60*1000);
+}
+
+// ══ 진행률 ══
+function updateProgress(){
+  const total=state.tasks.length+state.doneTasks.length,done=state.doneTasks.length;
+  document.getElementById('progressText').textContent=`${done} / ${total} 완료`;
+  document.getElementById('progressFill').style.width=total?`${(done/total)*100}%`:'0%';
+  document.getElementById('todoCount').textContent=state.tasks.length>0?`(${state.tasks.length})`:'';
+  document.getElementById('doneCount').textContent=done>0?`(${done})`:'';
+}
+
+// ══ 할 일 렌더 ══
+function render(){
+  const list=document.getElementById('taskList');
+  const sorted=[...state.tasks].sort((a,b)=>{
+    if(a.starred&&!b.starred)return-1;if(!a.starred&&b.starred)return 1;
+    const oa=a.sortOrder!==undefined?a.sortOrder:a.registeredAt;
+    const ob=b.sortOrder!==undefined?b.sortOrder:b.registeredAt;
+    return oa-ob;
+  });
+  const notice=document.getElementById('movedNotice');
+  if(state.movedCount>0){notice.style.display='';notice.textContent=`📦 어제 미완료 ${state.movedCount}개가 오늘로 이동됐어요.`;}
+  else notice.style.display='none';
+
+  if(sorted.length===0){
+    list.innerHTML='<div class="empty-state">할 일이 없어요 🎉<br>아래에서 추가해보세요</div>';
+  }else{
+    list.innerHTML=sorted.map(t=>{
+      const overdue=isOverdue(t.registeredAt);
+      const isPending=!!pendingComplete[t.id];
+      const isEditing=editingId===t.id;
+      const textEl=isEditing
+        ?`<input class="task-edit-input" id="edit-${t.id}" value="${escapeHtml(t.text)}"
+            onkeydown="handleEditKey(event,${t.id})" onblur="cancelEdit()" onclick="event.stopPropagation()">`
+        :`<div class="task-text" onclick="handleTaskClick(event,${t.id})" title="클릭: 수정 · 더블클릭: 매일반복 토글">${linkify(t.text)}${t.isRecurring?'<span class="recurring-icon">🔁</span>':''}</div>`;
+      return`
+      <div class="task-item${t.starred?' starred':''}${isPending?' pending':''}" id="task-${t.id}"
+        draggable="true"
+        ondragstart="onTaskDragStart(event,${t.id})"
+        ondragover="onTaskDragOver(event,${t.id})"
+        ondragleave="onTaskDragLeave(event,${t.id})"
+        ondragend="onTaskDragEnd(event,${t.id})"
+        ondrop="onTaskDrop(event,${t.id})"
+      >
+        ${isPending?'<div class="pending-bar"></div>':''}
+        <div class="check-btn${isPending?' pending-state':''}" onclick="startComplete(${t.id})" title="${isPending?'취소':'완료'}">${isPending?'×':''}</div>
+        <div class="task-info">
+          ${textEl}
+          <div class="task-time ${overdue?'overdue':''}">
+            🕐 ${formatTime(t.registeredAt)} 등록
+            ${overdue?'<span class="repeat-badge">재알림 중</span>':'<span style="color:#D1D1D6">· 미도래</span>'}
+            ${t.isRecurring?'<span class="daily-badge">매일해야하는일</span>':''}
+          </div>
+          ${isPending?'<div class="pending-hint">⚡ 1초 후 완료 · 다시 누르면 취소</div>':''}
+        </div>
+        <button class="icon-btn star${t.starred?' on':''}" onclick="toggleStar(${t.id})" title="중요">⭐</button>
+        <button class="icon-btn trash" onclick="deleteTask(${t.id})" title="삭제">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1.5 3.5h12M6 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M2.5 3.5l1 9a1 1 0 001 .9h6a1 1 0 001-.9l1-9"/>
+            <line x1="6" y1="7" x2="6" y2="10.5"/><line x1="9" y1="7" x2="9" y2="10.5"/>
+          </svg>
+        </button>
+      </div>`;
+    }).join('');
+  }
+  if(editingId){const inp=document.getElementById(`edit-${editingId}`);if(inp){inp.focus();inp.select();}}
+  updateProgress();
+}
+
+// ══ 드래그 & 드롭 ══
+let dragSrcId=null;
+function _getSortedTasks(){
+  return[...state.tasks].sort((a,b)=>{
+    if(a.starred&&!b.starred)return-1;if(!a.starred&&b.starred)return 1;
+    const oa=a.sortOrder!==undefined?a.sortOrder:a.registeredAt;
+    const ob=b.sortOrder!==undefined?b.sortOrder:b.registeredAt;
+    return oa-ob;
+  });
+}
+function onTaskDragStart(e,id){
+  if(e.target.closest('button,input,a')){e.preventDefault();return;}
+  dragSrcId=id;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));
+  setTimeout(()=>{const el=document.getElementById(`task-${id}`);if(el)el.classList.add('is-dragging');},0);
+}
+function onTaskDragOver(e,id){
+  e.preventDefault();e.dataTransfer.dropEffect='move';if(dragSrcId===id)return;
+  document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('drag-over'));
+  const el=document.getElementById(`task-${id}`);if(el)el.classList.add('drag-over');
+}
+function onTaskDragLeave(e,id){const el=document.getElementById(`task-${id}`);if(el)el.classList.remove('drag-over');}
+function onTaskDragEnd(e,id){
+  document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('is-dragging','drag-over'));
+  dragSrcId=null;
+}
+function onTaskDrop(e,targetId){
+  e.preventDefault();e.stopPropagation();
+  document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('drag-over','is-dragging'));
+  if(!dragSrcId||dragSrcId===targetId){dragSrcId=null;return;}
+  const sorted=_getSortedTasks();
+  const srcIdx=sorted.findIndex(t=>t.id===dragSrcId);
+  const tgtIdx=sorted.findIndex(t=>t.id===targetId);
+  if(srcIdx===-1||tgtIdx===-1){dragSrcId=null;return;}
+  const src=sorted[srcIdx];const tgt=sorted[tgtIdx];
+  if(src.starred!==tgt.starred){dragSrcId=null;return;}
+  sorted.splice(srcIdx,1);sorted.splice(tgtIdx,0,src);
+  sorted.forEach((t,i)=>{t.sortOrder=i;});
+  dragSrcId=null;saveState();render();
+}
+
+// ══ 클릭 / 더블클릭 분기 ══
+const _clickTimers={};
+function handleTaskClick(e,id){
+  if(pendingComplete[id])return;
+  if(_clickTimers[id]){
+    clearTimeout(_clickTimers[id]);delete _clickTimers[id];
+    toggleTaskRecurring(id);return;
+  }
+  _clickTimers[id]=setTimeout(()=>{delete _clickTimers[id];startEdit(id);},240);
+}
+function toggleTaskRecurring(id){
+  const t=state.tasks.find(t=>t.id===id);if(!t)return;
+  if(t.isRecurring){
+    t.isRecurring=false;
+    state.recurringTasks=(state.recurringTasks||[]).filter(rt=>rt.text!==t.text);
+    saveState();render();
+    showToast(`🔁 "<strong>${escapeHtml(t.text)}</strong>" 매일반복 해제됐어요`);
+  }else{
+    t.isRecurring=true;
+    if(!state.recurringTasks)state.recurringTasks=[];
+    if(!state.recurringTasks.some(rt=>rt.text===t.text))
+      state.recurringTasks.push({id:state.nextId++,text:t.text,starred:t.starred||false});
+    saveState();render();
+    showToast(`🔁 "<strong>${escapeHtml(t.text)}</strong>" 매일반복 설정됐어요`,'success');
+  }
+}
+
+// ══ 인라인 수정 ══
+function startEdit(id){if(pendingComplete[id])return;editingId=id;render();}
+function handleEditKey(e,id){
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const inp=document.getElementById(`edit-${id}`);if(!inp)return;
+    const newText=inp.value.trim();if(!newText)return;
+    const t=state.tasks.find(t=>t.id===id);if(!t)return;
+    const changed=t.text!==newText;
+    t.text=newText;editingId=null;saveState();render();
+    if(changed)showToast(`<strong>✏️ 수정 완료!</strong> "${escapeHtml(newText)}"`, 'edit');
+  }
+  if(e.key==='Escape'){e.preventDefault();cancelEdit();}
+}
+function cancelEdit(){if(!editingId)return;editingId=null;render();}
+
+// ══ 완료 탭 렌더 ══
+function renderDone(){
+  const list=document.getElementById('doneList');
+  const longDone=state.doneLongTasks||[];
+  if(state.doneTasks.length===0&&longDone.length===0){
+    list.innerHTML='<div class="empty-state">아직 완료한 일이 없어요</div>';return;
+  }
+  const regularHtml=[...state.doneTasks].reverse().map(t=>`
+    <div class="done-item${pendingUndo[t.id]?' pending':''}">
+      ${pendingUndo[t.id]?'<div class="pending-bar"></div>':''}
+      <div class="done-icon${pendingUndo[t.id]?' pending-state':''}" onclick="startUndo(${t.id})" title="${pendingUndo[t.id]?'취소':'되돌리기'}"></div>
+      <div class="task-info">
+        <div class="done-text">${linkify(t.text)}</div>
+        <div class="done-meta">등록 ${formatTime(t.registeredAt)} · 완료 ${formatTime(t.doneAt)}${t.starred?' ⭐':''}</div>
+        ${pendingUndo[t.id]?'<div class="pending-hint" style="color:#FFAFCC">⚡ 1초 후 되돌림 · 다시 누르면 취소</div>':''}
+      </div>
+      <button class="done-del-btn" onclick="deleteDoneTask(${t.id})" title="삭제">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 3.5h12M6 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M2.5 3.5l1 9a1 1 0 001 .9h6a1 1 0 001-.9l1-9"/>
+        </svg>
+      </button>
+    </div>`).join('');
+  const longHtml=longDone.length===0?'':
+    `<div class="long-section-label" style="font-size:14px;padding:14px 22px 4px">📌 완료한 장기업무</div>`+
+    [...longDone].reverse().map(t=>`
+    <div class="done-item${pendingLongUndo[t.id]?' pending':''}">
+      ${pendingLongUndo[t.id]?'<div class="pending-bar"></div>':''}
+      <div class="done-icon${pendingLongUndo[t.id]?' pending-state':''}" style="background:${pendingLongUndo[t.id]?'#FFAFCC':'linear-gradient(135deg,#A2D2FF,#BDE0FE)'};" onclick="startLongUndo(${t.id})" title="${pendingLongUndo[t.id]?'취소':'되돌리기'}"></div>
+      <div class="task-info">
+        <div class="done-text">${linkify(t.text)} <span class="long-badge" style="font-size:9px;vertical-align:middle">장기</span></div>
+        <div class="done-meta">📅 ${t.startDate||'?'} → ${t.endDate||'?'}${t.starred?' ⭐':''}</div>
+        ${pendingLongUndo[t.id]?'<div class="pending-hint" style="color:#FFAFCC">⚡ 1초 후 되돌림 · 다시 누르면 취소</div>':''}
+      </div>
+      <button class="done-del-btn" onclick="deleteDoneLongTask(${t.id})" title="삭제">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 3.5h12M6 3.5V2.5a.5.5 0 01.5-.5h2a.5.5 0 01.5.5v1M2.5 3.5l1 9a1 1 0 001 .9h6a1 1 0 001-.9l1-9"/>
+        </svg>
+      </button>
+    </div>`).join('');
+  list.innerHTML=regularHtml+longHtml;
+}
+
+// ══ 1초 퍼징 완료 ══
+function startComplete(id){
+  if(editingId===id)return;
+  if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];render();return;}
+  const timerId=setTimeout(()=>{delete pendingComplete[id];completeTask(id);},1000);
+  pendingComplete[id]={timerId};render();
+}
+function completeTask(id){
+  const idx=state.tasks.findIndex(t=>t.id===id);if(idx===-1)return;
+  const taskText=state.tasks[idx].text;
+  const el=document.getElementById(`task-${id}`);
+  if(el){el.classList.add('completing');setTimeout(()=>{_doComplete(id);celebrate(taskText);},350);}
+  else{_doComplete(id);celebrate(taskText);}
+}
+function _doComplete(id){
+  const idx=state.tasks.findIndex(t=>t.id===id);if(idx===-1)return;
+  const t={...state.tasks[idx],doneAt:Date.now(),done:true};
+  clearInterval(alarmTimers[id]);state.doneTasks.push(t);state.tasks.splice(idx,1);
+  saveState();render();
+  if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+  if(document.getElementById('panel-done').classList.contains('active'))renderDone();
+}
+
+// ══ 되돌리기 ══
+function startUndo(id){
+  if(pendingUndo[id]){clearTimeout(pendingUndo[id].timerId);delete pendingUndo[id];renderDone();return;}
+  const timerId=setTimeout(()=>{delete pendingUndo[id];undoComplete(id);},1000);
+  pendingUndo[id]={timerId};renderDone();
+}
+function startLongUndo(id){
+  if(pendingLongUndo[id]){clearTimeout(pendingLongUndo[id].timerId);delete pendingLongUndo[id];renderDone();return;}
+  const timerId=setTimeout(()=>{delete pendingLongUndo[id];undoLongComplete(id);},1000);
+  pendingLongUndo[id]={timerId};renderDone();
+}
+function undoComplete(id){
+  const idx=state.doneTasks.findIndex(t=>t.id===id);if(idx===-1)return;
+  const t={...state.doneTasks[idx],done:false};delete t.doneAt;
+  state.doneTasks.splice(idx,1);state.tasks.push(t);
+  scheduleAlarm(t);saveState();renderDone();render();
+  if(document.getElementById('panel-cal').classList.contains('active')){renderCal();if(currentModalDate)renderDayModal();}
+}
+
+// ══ 삭제 / 별표 ══
+function deleteTask(id){
+  if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];}
+  if(editingId===id)editingId=null;clearInterval(alarmTimers[id]);
+  state.tasks=state.tasks.filter(t=>t.id!==id);saveState();render();
+  if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+}
+function toggleStar(id){
+  const t=state.tasks.find(t=>t.id===id);if(!t)return;
+  t.starred=!t.starred;saveState();render();
+}
+function deleteDoneTask(id){
+  state.doneTasks=state.doneTasks.filter(t=>t.id!==id);
+  saveState();renderDone();updateProgress();
+  if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+}
+function deleteDoneLongTask(id){
+  state.doneLongTasks=(state.doneLongTasks||[]).filter(t=>t.id!==id);
+  saveState();renderDone();
+  if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+}
+
+// ══ 추가 ══
+function addTask(starred){
+  const input=document.getElementById('taskInput');
+  if(!input)return;
+  const text=input.value.trim();
+  if(!text){input.focus();return;}
+  try{
+    const task={id:state.nextId++,text,registeredAt:Date.now(),done:false,starred:!!starred};
+    state.tasks.push(task);
+    input.value='';input.focus();
+    render();updateProgress();
+    scheduleAlarm(task);saveState();
+    if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+    showToast(`<strong>➕ 추가 완료!</strong> "${escapeHtml(text)}"`,starred?'starred':'success');
+  }catch(e){
+    console.error('addTask error:',e);
+    showToast('❌ 추가 중 문제가 발생했습니다.');
+  }
+}
+function initInputEvents(){
+  const input=document.getElementById('taskInput');
+  if(input){
+    input.addEventListener('keydown',e=>{
+      if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();addTask(true);}
+      else if(e.key==='Enter'){e.preventDefault();addTask(false);}
+    });
+  }
+}
+initInputEvents();
+// 4회차: JS 후반부 (캘린더, 장기업무, 간트, 초기화) 예정
 </script>
 </body>
 </html>
