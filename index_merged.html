@@ -850,6 +850,38 @@
   .long-toggle-btn:hover { background:rgba(162,210,255,0.32); }
   .long-toggle-btn.on { background:rgba(162,210,255,0.32); border-color:var(--accent2); }
 
+  /* ══ 크로스 리스트 드래그 드롭 ══ */
+  #longTaskSection.drop-zone-active { min-height: 72px; }
+  #longTaskSection.drop-zone-hover {
+    background: rgba(162,210,255,0.10);
+    border: 1.5px dashed rgba(162,210,255,0.55);
+    border-radius: var(--radius-lg);
+    margin: 0 16px;
+  }
+  #longTaskSection.drop-zone-hover:not(:has(.long-task-item))::after {
+    content: '📌 여기에 드롭 → 장기업무로 이동';
+    display: flex; align-items: center; justify-content: center;
+    height: 72px; font-size: 13px; color: #5A90BE; font-weight: 600;
+  }
+  #taskList.drop-zone-hover {
+    background: rgba(205,180,219,0.08);
+    border: 1.5px dashed rgba(205,180,219,0.55);
+    border-radius: var(--radius-lg);
+    min-height: 60px;
+  }
+  #taskList.drop-zone-hover:not(:has(.task-item))::after {
+    content: '✅ 여기에 드롭 → 할일로 이동';
+    display: flex; align-items: center; justify-content: center;
+    height: 60px; font-size: 13px; color: #9B7BB4; font-weight: 600;
+  }
+  .long-task-item[draggable="true"] { cursor: grab; }
+  .long-task-item[draggable="true"]:active { cursor: grabbing; }
+  .long-task-item.is-dragging {
+    opacity: 0.40; transform: scale(0.96) rotate(-0.7deg) !important;
+    box-shadow: 0 20px 56px rgba(162,210,255,0.32) !important;
+    background: rgba(255,255,255,0.98) !important; z-index: 50; filter: blur(0.5px);
+  }
+
   /* ══ 앰비언트 애니메이션 ══ */
   @keyframes card-ambient {
     0%, 100% { box-shadow: var(--shadow-card); }
@@ -945,8 +977,10 @@
   <div class="section-label">오늘 할 일 <button class="repeat-task-btn" onclick="openRecurringModal()">🔁 매일반복 설정</button></div>
   <div class="progress" id="progressText"></div>
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-  <div class="task-list" id="taskList"></div>
-  <div id="longTaskSection"></div>
+  <div class="task-list" id="taskList"
+    ondragover="onTaskListDragOver(event)" ondragleave="onTaskListDragLeave(event)" ondrop="onTaskListDrop(event)"></div>
+  <div id="longTaskSection"
+    ondragover="onLongSectionDragOver(event)" ondragleave="onLongSectionDragLeave(event)" ondrop="onLongSectionDrop(event)"></div>
   <div style="height:120px;"></div>
 </div>
 
@@ -995,7 +1029,7 @@
 <div class="recurring-modal" id="recurringModal">
   <div class="day-modal-handle"></div>
   <div class="recurring-modal-hdr">
-    <div class="recurring-modal-title">🔁 매일 자동 등록 할 일 (09:00)</div>
+    <div class="recurring-modal-title">🔁 매일 자동 등록 할 일</div>
     <button class="recurring-modal-close" onclick="closeRecurringModal()">×</button>
   </div>
   <div class="recurring-modal-body" id="recurringBody"></div>
@@ -1257,6 +1291,8 @@ function render(){
 
 // ══ 드래그 & 드롭 ══
 let dragSrcId=null;
+let dragSrcType=null; // 'task' | 'long'
+let dragSrcLongId=null;
 function _getSortedTasks(){
   return[...state.tasks].sort((a,b)=>{
     if(a.starred&&!b.starred)return-1;if(!a.starred&&b.starred)return 1;
@@ -1267,32 +1303,146 @@ function _getSortedTasks(){
 }
 function onTaskDragStart(e,id){
   if(e.target.closest('button,input,a')){e.preventDefault();return;}
-  dragSrcId=id;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));
-  setTimeout(()=>{const el=document.getElementById(`task-${id}`);if(el)el.classList.add('is-dragging');},0);
+  dragSrcId=id;dragSrcType='task';
+  e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));
+  setTimeout(()=>{
+    const el=document.getElementById(`task-${id}`);if(el)el.classList.add('is-dragging');
+    const ls=document.getElementById('longTaskSection');if(ls)ls.classList.add('drop-zone-active');
+  },0);
 }
 function onTaskDragOver(e,id){
-  e.preventDefault();e.dataTransfer.dropEffect='move';if(dragSrcId===id)return;
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  if(dragSrcType==='long'){
+    document.getElementById('taskList').classList.add('drop-zone-hover');
+    return;
+  }
+  if(dragSrcId===id)return;
   document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('drag-over'));
   const el=document.getElementById(`task-${id}`);if(el)el.classList.add('drag-over');
 }
-function onTaskDragLeave(e,id){const el=document.getElementById(`task-${id}`);if(el)el.classList.remove('drag-over');}
+function onTaskDragLeave(e,id){
+  if(dragSrcType==='long'){
+    const tl=document.getElementById('taskList');
+    if(tl&&!tl.contains(e.relatedTarget))tl.classList.remove('drop-zone-hover');
+    return;
+  }
+  const el=document.getElementById(`task-${id}`);if(el)el.classList.remove('drag-over');
+}
 function onTaskDragEnd(e,id){
   document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('is-dragging','drag-over'));
-  dragSrcId=null;
+  const ls=document.getElementById('longTaskSection');if(ls)ls.classList.remove('drop-zone-active','drop-zone-hover');
+  const tl=document.getElementById('taskList');if(tl)tl.classList.remove('drop-zone-hover');
+  dragSrcId=null;dragSrcType=null;
 }
 function onTaskDrop(e,targetId){
   e.preventDefault();e.stopPropagation();
   document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('drag-over','is-dragging'));
-  if(!dragSrcId||dragSrcId===targetId){dragSrcId=null;return;}
+  const tl=document.getElementById('taskList');if(tl)tl.classList.remove('drop-zone-hover');
+  // 장기업무 → 할일 변환
+  if(dragSrcType==='long'){
+    const id=dragSrcLongId;
+    if(!id){dragSrcLongId=null;dragSrcType=null;return;}
+    const longIdx=(state.longTasks||[]).findIndex(t=>t.id===id);
+    if(longIdx===-1){dragSrcLongId=null;dragSrcType=null;return;}
+    const lt=state.longTasks[longIdx];
+    if(pendingLongComplete[id]){clearTimeout(pendingLongComplete[id].timerId);delete pendingLongComplete[id];}
+    if(longEditingId===id)longEditingId=null;
+    state.longTasks.splice(longIdx,1);
+    const task={id:lt.id,text:lt.text,registeredAt:Date.now(),done:false,starred:lt.starred||false};
+    state.tasks.push(task);scheduleAlarm(task);
+    dragSrcLongId=null;dragSrcType=null;
+    saveState();render();renderLongTasks();updateProgress();
+    showToast(`✅ "<strong>${escapeHtml(lt.text)}</strong>" 할일로 이동됨`,'success');
+    return;
+  }
+  // 할일 → 할일 순서 변경
+  if(!dragSrcId||dragSrcId===targetId){dragSrcId=null;dragSrcType=null;return;}
   const sorted=_getSortedTasks();
   const srcIdx=sorted.findIndex(t=>t.id===dragSrcId);
   const tgtIdx=sorted.findIndex(t=>t.id===targetId);
-  if(srcIdx===-1||tgtIdx===-1){dragSrcId=null;return;}
+  if(srcIdx===-1||tgtIdx===-1){dragSrcId=null;dragSrcType=null;return;}
   const src=sorted[srcIdx];const tgt=sorted[tgtIdx];
-  if(src.starred!==tgt.starred){dragSrcId=null;return;}
+  if(src.starred!==tgt.starred){dragSrcId=null;dragSrcType=null;return;}
   sorted.splice(srcIdx,1);sorted.splice(tgtIdx,0,src);
   sorted.forEach((t,i)=>{t.sortOrder=i;});
-  dragSrcId=null;saveState();render();
+  dragSrcId=null;dragSrcType=null;saveState();render();
+}
+
+// ══ taskList 컨테이너 드롭 (할일 비어있을 때 장기업무 → 할일) ══
+function onTaskListDragOver(e){
+  if(dragSrcType!=='long')return;
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  document.getElementById('taskList').classList.add('drop-zone-hover');
+}
+function onTaskListDragLeave(e){
+  const tl=document.getElementById('taskList');
+  if(tl&&!tl.contains(e.relatedTarget))tl.classList.remove('drop-zone-hover');
+}
+function onTaskListDrop(e){
+  e.preventDefault();
+  const tl=document.getElementById('taskList');if(tl)tl.classList.remove('drop-zone-active','drop-zone-hover');
+  document.querySelectorAll('.long-task-item').forEach(el=>el.classList.remove('is-dragging'));
+  if(dragSrcType!=='long'||!dragSrcLongId){dragSrcLongId=null;dragSrcType=null;return;}
+  const id=dragSrcLongId;
+  const longIdx=(state.longTasks||[]).findIndex(t=>t.id===id);
+  if(longIdx===-1){dragSrcLongId=null;dragSrcType=null;return;}
+  const lt=state.longTasks[longIdx];
+  if(pendingLongComplete[id]){clearTimeout(pendingLongComplete[id].timerId);delete pendingLongComplete[id];}
+  if(longEditingId===id)longEditingId=null;
+  state.longTasks.splice(longIdx,1);
+  const task={id:lt.id,text:lt.text,registeredAt:Date.now(),done:false,starred:lt.starred||false};
+  state.tasks.push(task);scheduleAlarm(task);
+  dragSrcLongId=null;dragSrcType=null;
+  saveState();render();renderLongTasks();updateProgress();
+  showToast(`✅ "<strong>${escapeHtml(lt.text)}</strong>" 할일로 이동됨`,'success');
+}
+
+// ══ longTaskSection 크로스 드롭 (할일 → 장기업무) ══
+function onLongSectionDragOver(e){
+  if(dragSrcType!=='task')return;
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  document.getElementById('longTaskSection').classList.add('drop-zone-hover');
+}
+function onLongSectionDragLeave(e){
+  const section=document.getElementById('longTaskSection');
+  if(section&&!section.contains(e.relatedTarget))section.classList.remove('drop-zone-hover');
+}
+function onLongSectionDrop(e){
+  e.preventDefault();e.stopPropagation();
+  const section=document.getElementById('longTaskSection');
+  if(section)section.classList.remove('drop-zone-active','drop-zone-hover');
+  document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('is-dragging','drag-over'));
+  if(dragSrcType!=='task'||!dragSrcId){dragSrcId=null;dragSrcType=null;return;}
+  const id=dragSrcId;
+  const taskIdx=state.tasks.findIndex(t=>t.id===id);
+  if(taskIdx===-1){dragSrcId=null;dragSrcType=null;return;}
+  const t=state.tasks[taskIdx];
+  if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];}
+  if(editingId===id)editingId=null;
+  clearInterval(alarmTimers[id]);
+  state.tasks.splice(taskIdx,1);
+  if(!state.longTasks)state.longTasks=[];
+  state.longTasks.push({id:t.id,text:t.text,starred:t.starred||false,stage:0,startDate:null,endDate:null,createdAt:Date.now()});
+  dragSrcId=null;dragSrcType=null;
+  saveState();render();renderLongTasks();updateProgress();
+  showToast(`📌 "<strong>${escapeHtml(t.text)}</strong>" 장기업무로 이동됨`,'success');
+}
+
+// ══ 장기업무 드래그 ══
+function onLongDragStart(e,id){
+  if(e.target.closest('button,input,a')){e.preventDefault();return;}
+  dragSrcLongId=id;dragSrcType='long';
+  e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id));
+  setTimeout(()=>{
+    const el=document.getElementById(`longtask-${id}`);if(el)el.classList.add('is-dragging');
+    const tl=document.getElementById('taskList');if(tl)tl.classList.add('drop-zone-active');
+  },0);
+}
+function onLongDragEnd(e,id){
+  document.querySelectorAll('.long-task-item').forEach(el=>el.classList.remove('is-dragging'));
+  const tl=document.getElementById('taskList');if(tl)tl.classList.remove('drop-zone-active','drop-zone-hover');
+  const ls=document.getElementById('longTaskSection');if(ls)ls.classList.remove('drop-zone-hover');
+  dragSrcLongId=null;dragSrcType=null;
 }
 
 // ══ 클릭 / 더블클릭 분기 ══
@@ -1865,7 +2015,6 @@ function printCal(){
 function checkRecurring(){
   if(!state.recurringTasks||state.recurringTasks.length===0)return;
   const today=todayStr();
-  if(new Date().getHours()<9)return;
   if(state.recurringLastDate===today)return;
   const nowTs=Date.now();
   state.recurringTasks.forEach(rt=>{
@@ -2044,7 +2193,10 @@ function renderLongTasks(){
       ?`<input class="task-edit-input" id="longedit-${t.id}" value="${escapeHtml(t.text)}"
           onkeydown="handleLongEditKey(event,${t.id})" onblur="cancelLongEdit()" onclick="event.stopPropagation()">`
       :`<div class="task-text" onclick="startLongEdit(${t.id})" title="클릭: 제목 수정">${escapeHtml(t.text)}</div>`;
-    return`<div class="long-task-item${isPend?' long-pending':''}" id="longtask-${t.id}">
+    return`<div class="long-task-item${isPend?' long-pending':''}" id="longtask-${t.id}"
+      draggable="true"
+      ondragstart="onLongDragStart(event,${t.id})"
+      ondragend="onLongDragEnd(event,${t.id})">
       ${isPend?'<div class="pending-bar"></div>':''}
       <div class="long-task-top">
         <div class="long-check-btn ${sc}" onclick="advanceLongStage(${t.id})" title="${t.stage===3?'완료 (1초)':'다음 단계'}">${icon}</div>

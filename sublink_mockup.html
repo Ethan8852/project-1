@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SubLink — 정기배송 직판 플랫폼</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --g:#16a34a;--gh:#15803d;--gl:#dcfce7;--gm:#bbf7d0;
+  --t1:#09090b;--t2:#52525b;--t3:#a1a1aa;
+  --bd:#e4e4e7;--bg:#f4f4f5;--w:#fff;
+  --red:#dc2626;--redl:#fee2e2;--amb:#d97706;--ambl:#fef3c7;
+  --sh:0 1px 3px rgba(0,0,0,.09),0 1px 2px rgba(0,0,0,.05);
+  --sh2:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -2px rgba(0,0,0,.05);
+  --r:12px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--t1);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font-family:inherit}
+.hidden{display:none!important}
+
+/* NAV */
+.topnav{position:sticky;top:0;z-index:100;background:var(--w);border-bottom:1px solid var(--bd);height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 16px}
+.logo{font-size:18px;font-weight:800;color:var(--g);letter-spacing:-.5px}
+.logo em{color:var(--t1);font-style:normal}
+.vtog{display:flex;background:var(--bg);border-radius:8px;padding:3px;gap:2px}
+.vbtn{padding:5px 13px;border:none;background:transparent;border-radius:6px;font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;transition:all .15s;white-space:nowrap}
+.vbtn.on{background:var(--w);color:var(--t1);box-shadow:var(--sh)}
+
+/* LAYOUT */
+.wrap{max-width:480px;margin:0 auto;padding:16px 16px 88px}
+@media(min-width:768px){.wrap{max-width:920px;padding:24px 24px 88px}}
+
+/* CARD */
+.card{background:var(--w);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:14px}
+.ch{padding:14px 18px 12px;border-bottom:1px solid var(--bg);display:flex;align-items:center;justify-content:space-between}
+.ct{font-size:14px;font-weight:700}
+.cb{padding:0}
+
+/* STATS */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+@media(min-width:640px){.sg{grid-template-columns:repeat(4,1fr)}}
+.sc{background:var(--w);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh)}
+.sl{font-size:11px;color:var(--t3);font-weight:500;margin-bottom:5px}
+.sv{font-size:22px;font-weight:800;color:var(--t1);line-height:1.1}
+.ss{font-size:11px;color:var(--g);margin-top:3px;font-weight:600}
+
+/* LIST ITEMS */
+.li{padding:12px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--bg)}
+.li:last-child{border-bottom:none}
+.li:hover{background:#fafafa}
+.av{width:34px;height:34px;border-radius:50%;background:var(--gl);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--g);flex-shrink:0}
+.lm{flex:1;min-width:0}
+.ln{font-weight:600;font-size:13px}
+.ld{font-size:11px;color:var(--t3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
+.bg{background:var(--gl);color:var(--g)}
+.br{background:var(--redl);color:var(--red)}
+.ba{background:var(--ambl);color:var(--amb)}
+.bz{background:var(--bg);color:var(--t3)}
+
+/* CHECK BTN */
+.chk{width:26px;height:26px;border:2px solid var(--bd);border-radius:6px;background:var(--w);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s}
+.chk.on{background:var(--g);border-color:var(--g)}
+.chk.on::after{content:'✓';color:white;font-size:13px;font-weight:700}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;border:none;cursor:pointer;transition:all .15s;gap:6px;white-space:nowrap}
+.btn-p{background:var(--g);color:white}
+.btn-p:hover{background:var(--gh)}
+.btn-o{background:var(--w);color:var(--t2);border:1px solid var(--bd)}
+.btn-o:hover{background:var(--bg)}
+.btn-sm{padding:5px 12px;font-size:12px;border-radius:6px}
+.btn-full{width:100%}
+.btn-ghost{background:transparent;color:var(--t3);border:none;font-size:12px}
+
+/* LINK BOX */
+.lbox{display:flex;align-items:center;gap:8px;background:var(--bg);border-radius:8px;padding:10px 14px;margin:14px 18px}
+.lurl{flex:1;font-size:12px;color:var(--t2);font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* CHIP TOGGLE */
+.ctog{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.chip{padding:5px 14px;border-radius:999px;border:1px solid var(--bd);background:var(--w);font-size:12px;font-weight:600;color:var(--t3);cursor:pointer;transition:all .15s}
+.chip.on{background:var(--t1);color:white;border-color:var(--t1)}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:44px 20px}
+.ei{font-size:44px;margin-bottom:14px}
+.et{font-size:16px;font-weight:700;margin-bottom:6px}
+.ed{font-size:13px;color:var(--t3);line-height:1.7;margin-bottom:20px}
+
+/* BOTTOM NAV */
+.bnav{position:fixed;bottom:0;left:0;right:0;background:var(--w);border-top:1px solid var(--bd);display:flex;padding:6px 0 max(6px,env(safe-area-inset-bottom))}
+.bni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px;cursor:pointer;font-size:10px;font-weight:500;color:var(--t3);background:transparent;border:none}
+.bni.on{color:var(--g)}
+.bnic{font-size:20px;line-height:1}
+
+/* TOAST */
+.toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--t1);color:white;padding:9px 20px;border-radius:999px;font-size:13px;font-weight:600;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap;z-index:999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ===== CUSTOMER VIEW ===== */
+.hero{background:var(--w);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden;margin-bottom:14px}
+.heroimg{width:100%;height:160px;background:linear-gradient(135deg,#d1fae5,#a7f3d0,#6ee7b7);display:flex;align-items:center;justify-content:center;font-size:60px}
+.herobody{padding:18px}
+.stag{font-size:11px;color:var(--t3);margin-bottom:5px;display:flex;align-items:center;gap:5px}
+.sdot{width:5px;height:5px;background:var(--g);border-radius:50%}
+.pname{font-size:19px;font-weight:800;margin-bottom:6px}
+.pprice{font-size:21px;font-weight:800;color:var(--g)}
+.pprice-s{font-size:13px;color:var(--t3);font-weight:400;margin-left:3px}
+.pdesc{font-size:13px;color:var(--t2);margin-top:8px;line-height:1.6}
+
+/* STEPS */
+.steps{display:flex;align-items:flex-start;margin-bottom:18px;padding:0 2px}
+.step{display:flex;flex-direction:column;align-items:center;flex:1;position:relative}
+.step::after{content:'';position:absolute;top:13px;left:50%;width:100%;height:2px;background:var(--bd);z-index:0}
+.step:last-child::after{display:none}
+.step.done::after,.step.active::after{background:var(--g)}
+.step:last-child.done::after{display:none}
+.snum{width:26px;height:26px;border-radius:50%;border:2px solid var(--bd);background:var(--w);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--t3);position:relative;z-index:1;transition:all .2s}
+.step.active .snum{border-color:var(--g);background:var(--g);color:white}
+.step.done .snum{border-color:var(--g);background:var(--g);color:white}
+.slbl{font-size:10px;color:var(--t3);margin-top:4px;text-align:center}
+.step.active .slbl{color:var(--g);font-weight:700}
+.step.done .slbl{color:var(--g)}
+
+/* PERIOD OPTS */
+.popts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px}
+.popt{padding:12px 8px;border:2px solid var(--bd);border-radius:10px;text-align:center;cursor:pointer;transition:all .15s;background:var(--w)}
+.popt.on{border-color:var(--g);background:var(--gl)}
+.pom{font-size:16px;font-weight:800;color:var(--t1)}
+.pos{font-size:10px;color:var(--t3);margin-top:2px}
+.popt.on .pom{color:var(--g)}
+.popt.on .pos{color:var(--g)}
+
+/* CALENDAR */
+.callabel{font-size:13px;font-weight:700;color:var(--t2);margin-bottom:10px}
+.calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.caln{font-size:14px;font-weight:700}
+.calnav{width:26px;height:26px;border:1px solid var(--bd);background:var(--w);border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
+.caldow{text-align:center;font-size:10px;font-weight:600;color:var(--t3);padding:3px 0}
+.calday{text-align:center;padding:6px 2px;font-size:12px;border-radius:5px;color:var(--t3)}
+.calday.im{color:var(--t1);cursor:pointer}
+.calday.im:hover{background:var(--bg)}
+.calday.today{font-weight:800;color:var(--g)}
+.calday.sel{background:var(--gl);color:var(--g);font-weight:700;border-radius:5px}
+.calday.sel.wstart{border-radius:8px 0 0 8px}
+.calday.sel.wend{border-radius:0 8px 8px 0}
+.calday.sel.wmid{border-radius:0}
+.calday.past{color:var(--t3)!important;pointer-events:none;opacity:.4}
+.selweeklabel{margin-top:10px;font-size:12px;color:var(--t2);text-align:center}
+.selweeklabel strong{color:var(--g)}
+
+/* FORM */
+.fg{margin-bottom:14px}
+.fl{display:block;font-size:12px;font-weight:700;color:var(--t2);margin-bottom:5px}
+.fi{width:100%;padding:11px 13px;border:1.5px solid var(--bd);border-radius:8px;font-size:15px;color:var(--t1);background:var(--w);outline:none;transition:border-color .15s;-webkit-appearance:none}
+.fi:focus{border-color:var(--g)}
+.fi::placeholder{color:var(--t3)}
+.fh{font-size:11px;color:var(--t3);margin-top:3px}
+
+/* SUMMARY */
+.sumbox{background:var(--bg);border-radius:10px;padding:14px 16px;margin-bottom:16px}
+.sumrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0}
+.sumrow+.sumrow{border-top:1px solid var(--bd)}
+.sumk{font-size:12px;color:var(--t3)}
+.sumv{font-size:13px;font-weight:600;color:var(--t1)}
+.sumtot{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:6px;border-top:2px solid var(--bd)}
+.stk{font-size:14px;font-weight:700}
+.stv{font-size:18px;font-weight:800;color:var(--g)}
+
+/* CARD INPUT */
+.cardinput{background:var(--bg);border-radius:10px;padding:16px;margin-bottom:16px}
+.cirow{display:flex;gap:8px;margin-top:10px}
+.cititle{font-size:13px;font-weight:700;color:var(--t2);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+
+/* SUCCESS */
+.succ{text-align:center;padding:36px 20px}
+.sicon{width:64px;height:64px;background:var(--gl);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:28px}
+.stitle{font-size:22px;font-weight:800;margin-bottom:8px}
+.sdesc{font-size:13px;color:var(--t3);line-height:1.8;margin-bottom:24px}
+.sinfo{background:var(--bg);border-radius:10px;padding:14px 16px;text-align:left;margin-bottom:20px}
+.sirow{display:flex;justify-content:space-between;padding:4px 0}
+.sik{font-size:12px;color:var(--t3)}
+.siv{font-size:12px;font-weight:600}
+
+/* STEP PANELS */
+.panel{display:none}
+.panel.on{display:block}
+
+/* ONBOARDING WELCOME */
+.welcome{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid var(--gm);border-radius:var(--r);padding:20px;margin-bottom:14px}
+.wtitle{font-size:17px;font-weight:800;margin-bottom:6px}
+.wdesc{font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:16px}
+.wsteps{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.ws{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--t2)}
+.wsn{width:22px;height:22px;background:var(--g);color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+
+/* NOTICE */
+.notice{background:var(--ambl);border-radius:8px;padding:10px 14px;display:flex;align-items:flex-start;gap:8px;margin:0 18px 14px;font-size:12px;color:var(--amb)}
+.notice-icon{flex-shrink:0;font-size:14px}
+
+/* DASHBOARD TABS */
+.dtabs{display:flex;gap:0;border-bottom:1px solid var(--bd);padding:0 18px;background:var(--w)}
+.dtab{padding:10px 14px;border:none;background:transparent;font-size:13px;font-weight:600;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.dtab.on{color:var(--g);border-bottom-color:var(--g)}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav class="topnav">
+  <div class="logo">Sub<em>Link</em></div>
+  <div class="vtog">
+    <button class="vbtn on" onclick="switchView('seller')">판매자 뷰</button>
+    <button class="vbtn" onclick="switchView('customer')">고객 뷰</button>
+  </div>
+</nav>
+
+<!-- ===== SELLER VIEW ===== -->
+<div id="v-seller" class="wrap">
+
+  <!-- empty/filled toggle -->
+  <div class="ctog">
+    <button class="chip on" onclick="setEmpty(false,this)">데이터 있는 상태</button>
+    <button class="chip" onclick="setEmpty(true,this)">빈 상태 (신규)</button>
+  </div>
+
+  <!-- FILLED STATE -->
+  <div id="filled">
+    <!-- stats -->
+    <div class="sg">
+      <div class="sc"><div class="sl">활성 구독자</div><div class="sv">24</div><div class="ss">▲ 3 이번 주 신규</div></div>
+      <div class="sc"><div class="sl">이번 주 발송</div><div class="sv">8</div><div class="ss">완료 5 / 예정 3</div></div>
+      <div class="sc"><div class="sl">이번 달 수익</div><div class="sv" style="font-size:18px">₩480,000</div><div class="ss">▲ 12% vs 지난달</div></div>
+      <div class="sc"><div class="sl">구독 유지율</div><div class="sv">73%</div><div class="ss">3회 결제 기준</div></div>
+    </div>
+
+    <!-- deliveries + subscribers tabbed -->
+    <div class="card">
+      <div class="dtabs">
+        <button class="dtab on" onclick="dtab(0,this)">이번 주 발송</button>
+        <button class="dtab" onclick="dtab(1,this)">전체 구독자</button>
+        <button class="dtab" onclick="dtab(2,this)">내 링크</button>
+      </div>
+
+      <!-- TAB 0: this week -->
+      <div id="dt0" class="cb">
+        <div class="notice" style="margin-top:14px"><span class="notice-icon">⚠</span><span>박준호 님 결제 실패 — 카드 재시도 예정 (5/12)</span></div>
+        <div class="li">
+          <div class="chk" onclick="this.classList.toggle('on')"></div>
+          <div class="av">김</div>
+          <div class="lm"><div class="ln">김민지</div><div class="ld">녹차 분말 200g · 2주마다 · 5/12 발송</div></div>
+          <span class="badge bg">발송 예정</span>
+        </div>
+        <div class="li">
+          <div class="chk on"></div>
+          <div class="av">이</div>
+          <div class="lm"><div class="ln">이현아</div><div class="ld">녹차 분말 200g · 2주마다 · 5/12 발송</div></div>
+          <span class="badge bz">완료</span>
+        </div>
+        <div class="li">
+          <div class="chk" onclick="this.classList.toggle('on')"></div>
+          <div class="av">박</div>
+          <div class="lm"><div class="ln">박준호</div><div class="ld">녹차 분말 500g · 1주마다 · 5/12 발송</div></div>
+          <span class="badge br">결제 실패</span>
+        </div>
+        <div class="li">
+          <div class="chk" onclick="this.classList.toggle('on')"></div>
+          <div class="av">최</div>
+          <div class="lm"><div class="ln">최유진</div><div class="ld">녹차 분말 500g · 2주마다 · 5/14 발송</div></div>
+          <span class="badge bg">발송 예정</span>
+        </div>
+        <div class="li">
+          <div class="chk" onclick="this.classList.toggle('on')"></div>
+          <div class="av">김</div>
+          <div class="lm"><div class="ln">김태영</div><div class="ld">녹차 분말 200g · 2주마다 · 5/14 발송</div></div>
+          <span class="badge bg">발송 예정</span>
+        </div>
+        <div style="padding:14px 18px">
+          <button class="btn btn-o btn-sm btn-full">발송 완료 일괄 처리</button>
+        </div>
+      </div>
+
+      <!-- TAB 1: all subscribers -->
+      <div id="dt1" class="cb hidden">
+        <div class="li">
+          <div class="av">김</div>
+          <div class="lm"><div class="ln">김민지</div><div class="ld">녹차 분말 200g · 2주마다 · 다음 5/12</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div class="li">
+          <div class="av">이</div>
+          <div class="lm"><div class="ln">이서연</div><div class="ld">녹차 분말 200g · 4주마다 · 다음 5/19</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div class="li">
+          <div class="av">박</div>
+          <div class="lm"><div class="ln">박준호</div><div class="ld">녹차 분말 500g · 1주마다 · 5/12</div></div>
+          <span class="badge br">결제 실패</span>
+        </div>
+        <div class="li">
+          <div class="av">최</div>
+          <div class="lm"><div class="ln">최유진</div><div class="ld">녹차 분말 500g · 2주마다 · 다음 5/14</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div class="li">
+          <div class="av">정</div>
+          <div class="lm"><div class="ln">정다은</div><div class="ld">녹차 분말 200g · 4주마다 · 다음 5/26</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div class="li">
+          <div class="av">홍</div>
+          <div class="lm"><div class="ln">홍성민</div><div class="ld">녹차 분말 500g · 1주마다 · 일시정지</div></div>
+          <span class="badge ba">일시정지</span>
+        </div>
+        <div class="li">
+          <div class="av">이</div>
+          <div class="lm"><div class="ln">이현아</div><div class="ld">녹차 분말 200g · 2주마다 · 완료 5/12</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div class="li">
+          <div class="av">장</div>
+          <div class="lm"><div class="ln">장수연</div><div class="ld">녹차 분말 200g · 2주마다 · 다음 5/21</div></div>
+          <span class="badge bg">구독 중</span>
+        </div>
+        <div style="padding:10px 18px 14px;text-align:center">
+          <span style="font-size:12px;color:var(--t3)">총 24명 중 8명 표시 중</span>
+        </div>
+      </div>
+
+      <!-- TAB 2: link share -->
+      <div id="dt2" class="cb hidden">
+        <div style="padding:16px 18px 0">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">구독 신청 링크</div>
+          <div style="font-size:12px;color:var(--t3);margin-bottom:2px">이 링크를 단골 고객에게 공유하세요</div>
+        </div>
+        <div class="lbox">
+          <span class="lurl">sublink.co/shop/greentea-farm</span>
+          <button class="btn btn-o btn-sm" onclick="copyLink()">복사</button>
+        </div>
+        <div style="padding:0 18px 16px;display:flex;gap:8px">
+          <button class="btn btn-p btn-sm" style="flex:1">📱 카카오 공유</button>
+          <button class="btn btn-o btn-sm" style="flex:1">QR 코드 출력</button>
+        </div>
+        <div style="padding:0 18px 16px;border-top:1px solid var(--bg);padding-top:14px">
+          <div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:8px">활용 팁</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="font-size:12px;color:var(--t3);display:flex;gap:6px"><span>📦</span><span>택배 박스에 QR 코드 동봉</span></div>
+            <div style="font-size:12px;color:var(--t3);display:flex;gap:6px"><span>💬</span><span>카카오톡 단골 고객에게 직접 전달</span></div>
+            <div style="font-size:12px;color:var(--t3);display:flex;gap:6px"><span>📸</span><span>인스타그램 바이오 링크 등록</span></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /card -->
+  </div><!-- /filled -->
+
+  <!-- EMPTY STATE -->
+  <div id="empty" class="hidden">
+    <div class="welcome">
+      <div class="wtitle">👋 SubLink에 오신 걸 환영해요</div>
+      <div class="wdesc">단골 고객에게 정기배송 링크를 공유하면<br>자동으로 결제·발송이 처리됩니다.</div>
+      <div class="wsteps">
+        <div class="ws"><div class="wsn">1</div><span>상품 등록 및 구독 링크 생성</span></div>
+        <div class="ws"><div class="wsn">2</div><span>링크를 단골 고객에게 공유</span></div>
+        <div class="ws"><div class="wsn">3</div><span>고객 등록 후 자동 결제·발송</span></div>
+      </div>
+      <button class="btn btn-p btn-full">+ 첫 상품 등록하기</button>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">이번 주 발송</span></div>
+      <div class="empty"><div class="ei">📭</div><div class="et">발송 예정이 없어요</div><div class="ed">구독 링크를 공유하고<br>첫 고객을 등록해보세요</div><button class="btn btn-p btn-sm">링크 공유하기</button></div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">구독자</span></div>
+      <div class="empty"><div class="ei">👥</div><div class="et">아직 구독자가 없어요</div><div class="ed">오픈마켓 단골 고객에게<br>구독 링크를 먼저 보내보세요</div></div>
+    </div>
+  </div>
+</div><!-- /seller wrap -->
+
+<!-- SELLER BOTTOM NAV -->
+<div id="bnav-seller" class="bnav">
+  <button class="bni on"><span class="bnic">🏠</span>대시보드</button>
+  <button class="bni"><span class="bnic">👥</span>구독자</button>
+  <button class="bni"><span class="bnic">🔗</span>링크공유</button>
+  <button class="bni"><span class="bnic">⚙️</span>설정</button>
+</div>
+
+<!-- ===== CUSTOMER VIEW ===== -->
+<div id="v-customer" class="wrap hidden">
+
+  <!-- product hero -->
+  <div class="hero">
+    <div class="heroimg">🍵</div>
+    <div class="herobody">
+      <div class="stag"><span class="sdot"></span>초록마을 직영</div>
+      <div class="pname">제주 유기농 녹차 분말</div>
+      <div>
+        <span class="pprice">₩28,000</span>
+        <span class="pprice-s">/ 200g · 1회</span>
+      </div>
+      <div class="pdesc">제주 한라산 기슭에서 재배한 유기농 녹차만을 사용합니다. 무농약 인증 원료, 직접 가공·직접 배송.</div>
+    </div>
+  </div>
+
+  <!-- step indicator -->
+  <div class="steps">
+    <div class="step active" id="s1"><div class="snum">1</div><div class="slbl">배송 설정</div></div>
+    <div class="step" id="s2"><div class="snum">2</div><div class="slbl">정보 입력</div></div>
+    <div class="step" id="s3"><div class="snum">3</div><div class="slbl">결제</div></div>
+  </div>
+
+  <!-- PANEL 1 -->
+  <div class="card panel on" id="p1">
+    <div class="ch"><span class="ct">배송 주기 선택</span></div>
+    <div class="cb" style="padding:16px 18px">
+      <div class="popts">
+        <div class="popt" onclick="selPeriod(this,'1주마다','28,000')"><div class="pom">1주</div><div class="pos">매주</div></div>
+        <div class="popt on" onclick="selPeriod(this,'2주마다','28,000')"><div class="pom">2주</div><div class="pos">격주 (추천)</div></div>
+        <div class="popt" onclick="selPeriod(this,'4주마다','28,000')"><div class="pom">4주</div><div class="pos">월 1회</div></div>
+      </div>
+      <div class="callabel">배송 시작 주차 선택</div>
+      <div class="calhead">
+        <button class="calnav">‹</button>
+        <span class="caln">2026년 5월</span>
+        <button class="calnav">›</button>
+      </div>
+      <div class="calgrid">
+        <div class="caldow">월</div><div class="caldow">화</div><div class="caldow">수</div><div class="caldow">목</div><div class="caldow">금</div><div class="caldow">토</div><div class="caldow">일</div>
+        <!-- Week 1: Apr 27-May 3 (past) -->
+        <div class="calday past im">27</div><div class="calday past im">28</div><div class="calday past im">29</div><div class="calday past im">30</div>
+        <div class="calday past im">1</div><div class="calday past im">2</div><div class="calday past im">3</div>
+        <!-- Week 2: May 4-10 (past, today is May 9) -->
+        <div class="calday past im">4</div><div class="calday past im">5</div><div class="calday past im">6</div><div class="calday past im">7</div>
+        <div class="calday past im">8</div><div class="calday today past im">9</div><div class="calday past im">10</div>
+        <!-- Week 3: May 11-17 (first available, pre-selected) -->
+        <div class="calday im sel wstart" data-week="3">11</div><div class="calday im sel wmid" data-week="3">12</div><div class="calday im sel wmid" data-week="3">13</div><div class="calday im sel wmid" data-week="3">14</div>
+        <div class="calday im sel wmid" data-week="3">15</div><div class="calday im sel wmid" data-week="3">16</div><div class="calday im sel wend" data-week="3">17</div>
+        <!-- Week 4: May 18-24 -->
+        <div class="calday im" data-week="4">18</div><div class="calday im" data-week="4">19</div><div class="calday im" data-week="4">20</div><div class="calday im" data-week="4">21</div>
+        <div class="calday im" data-week="4">22</div><div class="calday im" data-week="4">23</div><div class="calday im" data-week="4">24</div>
+        <!-- Week 5: May 25-31 -->
+        <div class="calday im" data-week="5">25</div><div class="calday im" data-week="5">26</div><div class="calday im" data-week="5">27</div><div class="calday im" data-week="5">28</div>
+        <div class="calday im" data-week="5">29</div><div class="calday im" data-week="5">30</div><div class="calday im" data-week="5">31</div>
+      </div>
+      <div class="selweeklabel">선택된 배송 주 : <strong>5월 3주차 (5/11 ~ 5/17)</strong></div>
+    </div>
+    <div style="padding:0 18px 18px">
+      <button class="btn btn-p btn-full" onclick="goStep(2)">다음 — 정보 입력</button>
+    </div>
+  </div>
+
+  <!-- PANEL 2 -->
+  <div class="card panel" id="p2">
+    <div class="ch"><span class="ct">배송 정보 입력</span></div>
+    <div class="cb" style="padding:16px 18px">
+      <div class="fg">
+        <label class="fl">이름</label>
+        <input class="fi" type="text" placeholder="홍길동">
+      </div>
+      <div class="fg">
+        <label class="fl">연락처</label>
+        <input class="fi" type="tel" placeholder="010-0000-0000">
+        <div class="fh">발송 알림 문자를 받을 번호</div>
+      </div>
+      <div class="fg">
+        <label class="fl">배송지 주소</label>
+        <input class="fi" type="text" placeholder="도로명 주소 검색" style="margin-bottom:6px">
+        <input class="fi" type="text" placeholder="상세 주소 (동/호수)">
+      </div>
+      <div class="fg">
+        <label class="fl">배송 요청사항 <span style="color:var(--t3);font-weight:400">(선택)</span></label>
+        <input class="fi" type="text" placeholder="예: 문 앞에 놔주세요">
+      </div>
+    </div>
+    <div style="padding:0 18px 18px;display:flex;gap:8px">
+      <button class="btn btn-o" style="min-width:64px" onclick="goStep(1)">이전</button>
+      <button class="btn btn-p" style="flex:1" onclick="goStep(3)">다음 — 결제 등록</button>
+    </div>
+  </div>
+
+  <!-- PANEL 3 -->
+  <div class="card panel" id="p3">
+    <div class="ch"><span class="ct">결제 등록</span></div>
+    <div class="cb" style="padding:16px 18px">
+      <div class="sumbox">
+        <div class="sumrow"><span class="sumk">상품</span><span class="sumv">녹차 분말 200g</span></div>
+        <div class="sumrow"><span class="sumk">배송 주기</span><span class="sumv">2주마다</span></div>
+        <div class="sumrow"><span class="sumk">시작 주차</span><span class="sumv">5월 3주차 (5/11~5/17)</span></div>
+        <div class="sumrow"><span class="sumk">배송지</span><span class="sumv">서울시 마포구 ···</span></div>
+        <div class="sumtot"><span class="stk">1회 결제 금액</span><span class="stv">₩28,000</span></div>
+      </div>
+      <div class="cardinput">
+        <div class="cititle"><span>🔒</span> 카드 정보 (PG사 보안 처리)</div>
+        <div class="fg">
+          <label class="fl">카드 번호</label>
+          <input class="fi" type="tel" placeholder="0000 - 0000 - 0000 - 0000" maxlength="19" id="cardnum">
+        </div>
+        <div class="cirow">
+          <div class="fg" style="flex:1;margin-bottom:0">
+            <label class="fl">유효기간</label>
+            <input class="fi" type="tel" placeholder="MM / YY" maxlength="5">
+          </div>
+          <div class="fg" style="flex:1;margin-bottom:0">
+            <label class="fl">CVC</label>
+            <input class="fi" type="tel" placeholder="000" maxlength="3">
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--t3);text-align:center;margin-bottom:14px;line-height:1.7">카드 정보는 PG사(토스페이먼츠)에 암호화 저장되며<br>본 서비스는 카드 번호를 보관하지 않습니다.</div>
+    </div>
+    <div style="padding:0 18px 18px;display:flex;gap:8px">
+      <button class="btn btn-o" style="min-width:64px" onclick="goStep(2)">이전</button>
+      <button class="btn btn-p" style="flex:1" onclick="goStep(4)">월 구독 신청 — ₩28,000</button>
+    </div>
+  </div>
+
+  <!-- PANEL 4: SUCCESS -->
+  <div class="card panel" id="p4">
+    <div class="succ">
+      <div class="sicon">✅</div>
+      <div class="stitle">구독 신청 완료!</div>
+      <div class="sdesc">첫 배송 전날 문자로 알려드릴게요.<br>매 배송마다 자동 결제 후 발송됩니다.<br>변경·건너뛰기는 문자 링크로 간편하게.</div>
+      <div class="sinfo">
+        <div class="sirow"><span class="sik">상품</span><span class="siv">녹차 분말 200g</span></div>
+        <div class="sirow"><span class="sik">첫 배송</span><span class="siv">5월 3주차 (5/11~5/17)</span></div>
+        <div class="sirow"><span class="sik">주기</span><span class="siv">2주마다 자동 결제</span></div>
+        <div class="sirow"><span class="sik">연락처</span><span class="siv">010-****-1234</span></div>
+      </div>
+      <button class="btn btn-o btn-full" onclick="goStep(1)">처음으로</button>
+    </div>
+  </div>
+
+</div><!-- /customer wrap -->
+
+<div id="toast" class="toast">링크가 복사됐어요 ✓</div>
+
+<script>
+function switchView(v) {
+  document.querySelectorAll('.vbtn').forEach((b,i) => b.classList.toggle('on', (i===0&&v==='seller')||(i===1&&v==='customer')));
+  document.getElementById('v-seller').classList.toggle('hidden', v!=='seller');
+  document.getElementById('v-customer').classList.toggle('hidden', v!=='customer');
+  document.getElementById('bnav-seller').classList.toggle('hidden', v!=='seller');
+}
+
+function setEmpty(empty, btn) {
+  document.querySelectorAll('.ctog .chip').forEach(c => c.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('filled').classList.toggle('hidden', empty);
+  document.getElementById('empty').classList.toggle('hidden', !empty);
+}
+
+function dtab(idx, btn) {
+  document.querySelectorAll('.dtab').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  ['dt0','dt1','dt2'].forEach((id,i) => document.getElementById(id).classList.toggle('hidden', i!==idx));
+}
+
+function goStep(n) {
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('on', i===n-1));
+  ['s1','s2','s3'].forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.classList.remove('active','done');
+    if(i+1 < n) el.classList.add('done');
+    else if(i+1 === n) el.classList.add('active');
+  });
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function selPeriod(el) {
+  document.querySelectorAll('.popt').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+}
+
+const weekLabels = {3:'5월 3주차 (5/11 ~ 5/17)',4:'5월 4주차 (5/18 ~ 5/24)',5:'5월 5주차 (5/25 ~ 5/31)'};
+document.querySelectorAll('.calday.im:not(.past)').forEach(day => {
+  day.addEventListener('click', function() {
+    const w = parseInt(this.dataset.week);
+    if(!w) return;
+    document.querySelectorAll('.calday').forEach(d => d.classList.remove('sel','wstart','wmid','wend'));
+    document.querySelectorAll(`.calday[data-week="${w}"]`).forEach((d,i,arr) => {
+      d.classList.add('sel');
+      if(i===0) d.classList.add('wstart');
+      else if(i===arr.length-1) d.classList.add('wend');
+      else d.classList.add('wmid');
+    });
+    const lbl = document.querySelector('.selweeklabel');
+    if(lbl) lbl.innerHTML = `선택된 배송 주 : <strong>${weekLabels[w]||'선택됨'}</strong>`;
+  });
+});
+
+const cardInput = document.getElementById('cardnum');
+if(cardInput) {
+  cardInput.addEventListener('input', function() {
+    let v = this.value.replace(/\D/g,'').slice(0,16);
+    this.value = v.replace(/(\d{4})(?=\d)/g,'$1 - ');
+  });
+}
+
+function copyLink() {
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+document.querySelectorAll('.bni').forEach(b => b.addEventListener('click', function() {
+  document.querySelectorAll('.bni').forEach(x => x.classList.remove('on'));
+  this.classList.add('on');
+}));
+</script>
+</body>
+</html>
