@@ -160,6 +160,8 @@ function SellerView({ user }) {
   const [allDeliveries,  setAllDeliveries]  = useState([])
   const [chargeHistory,  setChargeHistory]  = useState([])
   const [showDelivHist,  setShowDelivHist]  = useState(false)
+  const [delivHistFilter, setDelivHistFilter] = useState('30d')
+  const [expandedCustomerId, setExpandedCustomerId] = useState(null)
   const undoTimerRef = useRef(null)
 
   useEffect(() => { fetchAll(); fetchDeliveries() }, [])
@@ -241,23 +243,27 @@ function SellerView({ user }) {
 
     if (completedIds.has(sub.id)) {
       // 완료 취소: deductionId 있으면 환불 후 삭제
-      const delivSnap = await getDoc(deliveryRef)
-      if (delivSnap.exists() && delivSnap.data().deductionId) {
-        const deductionId = delivSnap.data().deductionId
-        const walletRef   = doc(db, 'wallets', sub.customerId)
-        const deductRef   = doc(db, 'deductions', deductionId)
-        const amount      = sub.totalPrice ?? sub.productPrice ?? 0
-        await runTransaction(db, async (tx) => {
-          const ws  = await tx.get(walletRef)
-          const bal = ws.exists() ? (ws.data().balance ?? 0) : 0
-          tx.set(walletRef, { balance: bal + amount, updatedAt: serverTimestamp() }, { merge: true })
-          tx.delete(deductRef)
-          tx.delete(deliveryRef)
-        })
-      } else {
-        await deleteDoc(deliveryRef)
+      try {
+        const delivSnap = await getDoc(deliveryRef)
+        if (delivSnap.exists() && delivSnap.data().deductionId) {
+          const deductionId = delivSnap.data().deductionId
+          const walletRef   = doc(db, 'wallets', sub.customerId)
+          const deductRef   = doc(db, 'deductions', deductionId)
+          const amount      = sub.totalPrice ?? sub.productPrice ?? 0
+          await runTransaction(db, async (tx) => {
+            const ws  = await tx.get(walletRef)
+            const bal = ws.exists() ? (ws.data().balance ?? 0) : 0
+            tx.set(walletRef, { balance: bal + amount, updatedAt: serverTimestamp() }, { merge: true })
+            tx.delete(deductRef)
+            tx.delete(deliveryRef)
+          })
+        } else {
+          await deleteDoc(deliveryRef)
+        }
+        setCompletedIds(prev => { const next = new Set(prev); next.delete(sub.id); return next })
+      } catch (err) {
+        alert(`되돌리기 오류: ${err.code ?? err.message}`)
       }
-      setCompletedIds(prev => { const next = new Set(prev); next.delete(sub.id); return next })
     } else {
       // 발송 완료: 지갑 차감
       const walletRef = doc(db, 'wallets', sub.customerId)
@@ -336,6 +342,33 @@ function SellerView({ user }) {
     if (failNames.length > 0) {
       setDeliveryError(`잔액 부족 ${failNames.length}건 처리 실패: ${failNames.join(', ')}`)
       setTimeout(() => setDeliveryError(''), 5000)
+    }
+  }
+
+  async function undoDelivery(delivery) {
+    const deliveryRef = doc(db, 'deliveries', delivery.id)
+    try {
+      if (delivery.deductionId) {
+        const sub     = subs.find(s => s.id === delivery.subId)
+        const amount  = sub?.totalPrice ?? sub?.productPrice ?? 0
+        const walletRef = doc(db, 'wallets', delivery.customerId)
+        const deductRef = doc(db, 'deductions', delivery.deductionId)
+        await runTransaction(db, async (tx) => {
+          const ws  = await tx.get(walletRef)
+          const bal = ws.exists() ? (ws.data().balance ?? 0) : 0
+          tx.set(walletRef, { balance: bal + amount, updatedAt: serverTimestamp() }, { merge: true })
+          tx.delete(deductRef)
+          tx.delete(deliveryRef)
+        })
+      } else {
+        await deleteDoc(deliveryRef)
+      }
+      setAllDeliveries(prev => prev.filter(d => d.id !== delivery.id))
+      if (delivery.ymw === `${yearMonth}_${currentWeek}`) {
+        setCompletedIds(prev => { const next = new Set(prev); next.delete(delivery.subId); return next })
+      }
+    } catch (err) {
+      alert(`되돌리기 오류: ${err.code ?? err.message}`)
     }
   }
 
@@ -521,7 +554,7 @@ function SellerView({ user }) {
               <div className="stat-value">{products.length}</div>
               <div className="stat-sub">상품관리 →</div>
             </div>
-            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setShowDeliveryDetail(true)}>
+            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => { setShowDeliveryDetail(true); fetchAllDeliveries() }}>
               <div className="stat-label">처리완료</div>
               <div className="stat-value">
                 {thisWeekCompleted}
@@ -634,9 +667,15 @@ function SellerView({ user }) {
                             )}
                             <div className="ld">{sub.address}</div>
                           </div>
-                          <span className={`badge ${done ? 'badge-muted' : sub.status === 'active' ? 'badge-success' : 'badge-muted'}`}>
-                            {done ? '완료' : sub.status === 'active' ? '활성' : '정지'}
-                          </span>
+                          {done
+                            ? <button className="btn-secondary btn-sm" style={{ flexShrink: 0 }}
+                                onClick={e => { e.stopPropagation(); toggleComplete(sub) }}>
+                                되돌리기
+                              </button>
+                            : <span className={`badge ${sub.status === 'active' ? 'badge-success' : 'badge-muted'}`}>
+                                {sub.status === 'active' ? '활성' : '정지'}
+                              </span>
+                          }
                         </div>
                       )
                     })}
@@ -887,127 +926,156 @@ function SellerView({ user }) {
       )}
 
       {/* 구독자 관리 바텀시트 */}
-      {showSubscribers && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end' }}
-          onClick={e => e.target === e.currentTarget && setShowSubscribers(false)}>
-          <div style={{ width: '100%', maxWidth: 'var(--container-max)', margin: '0 auto', background: '#fff', borderRadius: '16px 16px 0 0', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16 }}>구독자 목록 ({subs.filter(s => s.status === 'active').length}명 활성)</div>
-              <button onClick={() => setShowSubscribers(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text-muted)', lineHeight: 1 }}>×</button>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 32px' }}>
-              {subs.filter(s => s.status !== 'cancelled').length === 0 ? (
-                <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>활성 구독자가 없어요.</div>
-              ) : subs.filter(s => s.status !== 'cancelled').map(sub => (
-                <div key={sub.id} style={{ padding: '14px 20px', borderBottom: '1px solid var(--color-border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: bonusTarget?.id === sub.id ? 10 : 0 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>{sub.recipientName ?? sub.customerName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                        {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''} · ₩{(sub.totalPrice ?? sub.productPrice)?.toLocaleString()}
+      {showSubscribers && (() => {
+        const customerMap = {}
+        subs.filter(s => s.status !== 'cancelled').forEach(sub => {
+          if (!customerMap[sub.customerId]) {
+            customerMap[sub.customerId] = {
+              id: sub.customerId,
+              name: sub.recipientName ?? sub.customerName ?? '(이름 없음)',
+              phone: sub.phone,
+              subs: [],
+            }
+          }
+          customerMap[sub.customerId].subs.push(sub)
+        })
+        const customers = Object.values(customerMap)
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end' }}
+            onClick={e => e.target === e.currentTarget && setShowSubscribers(false)}>
+            <div style={{ width: '100%', maxWidth: 'var(--container-max)', margin: '0 auto', background: '#fff', borderRadius: '16px 16px 0 0', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>구독자 목록 ({customers.length}명)</div>
+                <button onClick={() => setShowSubscribers(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text-muted)', lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '0 0 32px' }}>
+                {customers.length === 0 ? (
+                  <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>활성 구독자가 없어요.</div>
+                ) : customers.map(c => (
+                  <div key={c.id}>
+                    {/* 회원 헤더 */}
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', gap: 12 }}
+                      onClick={() => setExpandedCustomerId(prev => prev === c.id ? null : c.id)}
+                    >
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--color-primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: 'var(--color-primary)', flexShrink: 0 }}>
+                        {c.name[0]?.toUpperCase() ?? '?'}
                       </div>
-                      {sub.phone && <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{sub.phone}</div>}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 1 }}>
+                          구독 {c.subs.length}건 · {c.phone ?? '전화번호 없음'}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0 }}>
+                        {expandedCustomerId === c.id ? '▲' : '▼'}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 10 }}>
-                      <button className="btn-secondary btn-sm"
-                        style={{ color: 'var(--color-primary)', borderColor: 'var(--color-primary-light)' }}
-                        onClick={() => { setBonusTarget(bonusTarget?.id === sub.id ? null : sub); setBonusAmount('') }}>
-                        보너스
-                      </button>
-                      <button className="btn-secondary btn-sm"
-                        style={{ color: 'var(--color-error)', borderColor: 'var(--color-error-light)' }}
-                        onClick={() => sellerUpdateSubStatus(sub, 'cancelled')}>
-                        해지
-                      </button>
-                    </div>
+                    {/* 해당 회원의 구독 목록 */}
+                    {expandedCustomerId === c.id && (
+                      <div style={{ background: 'var(--color-surface)' }}>
+                        {c.subs.map(sub => (
+                          <div key={sub.id} style={{ padding: '12px 20px 12px 72px', borderBottom: '1px solid var(--color-border)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                                  {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''} · ₩{(sub.totalPrice ?? sub.productPrice)?.toLocaleString()}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                  {periodLabel(sub.period, sub.customDate)}
+                                </div>
+                                {sub.address && <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.address}</div>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <span className={`badge ${sub.status === 'active' ? 'badge-success' : 'badge-muted'}`}>
+                                  {sub.status === 'active' ? '활성' : '정지'}
+                                </span>
+                                <button className="btn-secondary btn-sm"
+                                  style={{ color: 'var(--color-primary)', borderColor: 'var(--color-primary-light)' }}
+                                  onClick={() => { setBonusTarget(bonusTarget?.id === sub.id ? null : sub); setBonusAmount('') }}>
+                                  보너스
+                                </button>
+                                <button className="btn-secondary btn-sm"
+                                  style={{ color: 'var(--color-error)', borderColor: 'var(--color-error-light)' }}
+                                  onClick={() => sellerUpdateSubStatus(sub, 'cancelled')}>
+                                  해지
+                                </button>
+                              </div>
+                            </div>
+                            {bonusTarget?.id === sub.id && (
+                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                <input className="input-field" type="number" placeholder="보너스 금액 (원)"
+                                  value={bonusAmount} onChange={e => setBonusAmount(e.target.value)}
+                                  style={{ flex: 1, padding: '8px 10px', fontSize: 13 }} min={1} />
+                                <button className="btn-primary btn-sm" style={{ flexShrink: 0 }}
+                                  disabled={bonusSaving || !bonusAmount}
+                                  onClick={() => giftBonus(sub, bonusAmount)}>
+                                  {bonusSaving ? '…' : '지급'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {bonusTarget?.id === sub.id && (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <input
-                        className="input-field"
-                        type="number"
-                        placeholder="보너스 금액 (원)"
-                        value={bonusAmount}
-                        onChange={e => setBonusAmount(e.target.value)}
-                        style={{ flex: 1, padding: '8px 10px', fontSize: 13 }}
-                        min={1}
-                      />
-                      <button className="btn-primary btn-sm"
-                        style={{ flexShrink: 0 }}
-                        disabled={bonusSaving || !bonusAmount}
-                        onClick={() => giftBonus(sub, bonusAmount)}>
-                        {bonusSaving ? '…' : '지급'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* 배송 처리 상세 바텀시트 */}
-      {showDeliveryDetail && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end' }}
-          onClick={e => e.target === e.currentTarget && setShowDeliveryDetail(false)}>
-          <div style={{ width: '100%', maxWidth: 'var(--container-max)', margin: '0 auto', background: '#fff', borderRadius: '16px 16px 0 0', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16 }}>
-                {currentWeek.replace('week', '')}주차 배송 ({thisWeekCompleted}/{thisWeekSubs.length}건 완료)
+      {showDeliveryDetail && (() => {
+        const now30   = Date.now() / 1000 - 30 * 86400
+        const months  = [...new Set(allDeliveries.map(d => d.yearMonth).filter(Boolean))].sort().reverse()
+        const filtered = delivHistFilter === '30d'
+          ? allDeliveries.filter(d => (d.completedAt?.seconds ?? 0) >= now30)
+          : allDeliveries.filter(d => d.yearMonth === delivHistFilter)
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end' }}
+            onClick={e => e.target === e.currentTarget && setShowDeliveryDetail(false)}>
+            <div style={{ width: '100%', maxWidth: 'var(--container-max)', margin: '0 auto', background: '#fff', borderRadius: '16px 16px 0 0', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>발송 완료 내역 ({filtered.length}건)</div>
+                <button onClick={() => setShowDeliveryDetail(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text-muted)', lineHeight: 1 }}>×</button>
               </div>
-              <button onClick={() => setShowDeliveryDetail(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text-muted)', lineHeight: 1 }}>×</button>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '0 0 32px' }}>
-              {/* 미완료 */}
-              {thisWeekSubs.filter(s => !completedIds.has(s.id)).length > 0 && (
-                <>
-                  <div style={{ padding: '10px 20px 4px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                    미완료 ({thisWeekSubs.filter(s => !completedIds.has(s.id)).length}건)
-                  </div>
-                  {thisWeekSubs.filter(s => !completedIds.has(s.id)).map(sub => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', gap: 12 }}>
+              {/* 날짜 필터 */}
+              <div style={{ display: 'flex', gap: 6, padding: '8px 16px', overflowX: 'auto', flexShrink: 0, borderBottom: '1px solid var(--color-border)', scrollbarWidth: 'none' }}>
+                {[{ key: '30d', label: '최근 30일' }, ...months.map(m => ({ key: m, label: `${m.replace('_', '년 ')}월` }))].map(({ key, label }) => (
+                  <button key={key} className="btn-secondary btn-sm"
+                    style={{ flexShrink: 0, ...(delivHistFilter === key ? { borderColor: 'var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-primary-light)' } : {}) }}
+                    onClick={() => setDelivHistFilter(key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ overflowY: 'auto', padding: '0 0 32px' }}>
+                {filtered.length === 0 ? (
+                  <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>발송 내역이 없어요.</div>
+                ) : filtered.map(d => {
+                  const sub = subs.find(s => s.id === d.subId)
+                  return (
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--color-border)', gap: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{sub.recipientName ?? sub.customerName}</div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{sub?.recipientName ?? sub?.customerName ?? '(탈퇴 회원)'}</div>
                         <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                          {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''} · {sub.phone}
+                          {sub?.productName}{sub?.qty > 1 ? ` ×${sub.qty}` : ''} · {fmtDate(d.completedAt?.seconds)}
                         </div>
+                        {sub?.address && <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.address}</div>}
                       </div>
-                      <button className="btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => toggleComplete(sub)}>
-                        완료
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-              {/* 완료 */}
-              {thisWeekSubs.filter(s => completedIds.has(s.id)).length > 0 && (
-                <>
-                  <div style={{ padding: '10px 20px 4px', fontSize: 11, fontWeight: 700, color: 'var(--color-success)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                    완료 ({thisWeekSubs.filter(s => completedIds.has(s.id)).length}건)
-                  </div>
-                  {thisWeekSubs.filter(s => completedIds.has(s.id)).map(sub => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', padding: '10px 20px', borderBottom: '1px solid var(--color-border)', gap: 12, opacity: 0.7 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, textDecoration: 'line-through', color: 'var(--color-text-muted)' }}>{sub.recipientName ?? sub.customerName}</div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                          {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''}
-                        </div>
-                      </div>
-                      <button className="btn-secondary btn-sm" style={{ flexShrink: 0 }} onClick={() => toggleComplete(sub)}>
+                      <button className="btn-secondary btn-sm" style={{ flexShrink: 0 }} onClick={() => undoDelivery(d)}>
                         되돌리기
                       </button>
                     </div>
-                  ))}
-                </>
-              )}
-              {thisWeekSubs.length === 0 && (
-                <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>이번 주차 배송이 없어요.</div>
-              )}
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <div className={`toast${toast ? ' show' : ''}`}>완료 ✓</div>
     </>
