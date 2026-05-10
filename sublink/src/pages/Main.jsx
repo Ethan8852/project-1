@@ -13,6 +13,29 @@ import RetentionModal from '../components/RetentionModal'
 const SELLER_UID = import.meta.env.VITE_SELLER_UID
 const BANK_INFO  = { bank: '부산은행', account: '217-12-015025-3', holder: '안필숙' }
 
+function fmtDate(seconds) {
+  if (!seconds) return ''
+  return new Date(seconds * 1000).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+}
+
+function histLabel(item) {
+  if (item._type === 'charge') return {
+    icon: '💰', text: `+₩${item.totalAmount?.toLocaleString()}`,
+    color: 'var(--color-success)',
+    sub: item.status === 'pending' ? '충전 신청 (입금 확인 대기)' : '충전 완료',
+  }
+  if (item._type === 'deduction') return {
+    icon: '📦', text: `-₩${item.amount?.toLocaleString()}`,
+    color: 'var(--color-text)',
+    sub: item.productName ? `구독 차감 — ${item.productName}` : '구독 차감',
+  }
+  return {
+    icon: '🏦', text: `-₩${item.amount?.toLocaleString()}`,
+    color: 'var(--color-error)',
+    sub: `환전 신청 (${item.status === 'pending' ? '처리 중' : '완료'})`,
+  }
+}
+
 const PERIODS = [
   { value: 'week1', main: '1주차', sub: '매월 첫째 주' },
   { value: 'week2', main: '2주차', sub: '매월 둘째 주' },
@@ -134,6 +157,9 @@ function SellerView({ user }) {
   const [bonusTarget,    setBonusTarget]    = useState(null)
   const [bonusAmount,    setBonusAmount]    = useState('')
   const [bonusSaving,    setBonusSaving]    = useState(false)
+  const [allDeliveries,  setAllDeliveries]  = useState([])
+  const [chargeHistory,  setChargeHistory]  = useState([])
+  const [showDelivHist,  setShowDelivHist]  = useState(false)
   const undoTimerRef = useRef(null)
 
   useEffect(() => { fetchAll(); fetchDeliveries() }, [])
@@ -170,11 +196,43 @@ function SellerView({ user }) {
   }
 
   async function fetchCharges() {
-    const snap = await getDocs(query(collection(db, 'charges'), where('status', '==', 'pending')))
+    const [pendingSnap, histSnap] = await Promise.all([
+      getDocs(query(collection(db, 'charges'), where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'charges'), where('status', '==', 'confirmed'))),
+    ])
     setCharges(
-      snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      pendingSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
     )
+    setChargeHistory(
+      histSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.confirmedAt?.seconds ?? b.createdAt?.seconds ?? 0) - (a.confirmedAt?.seconds ?? a.createdAt?.seconds ?? 0))
+    )
+  }
+
+  async function fetchAllDeliveries() {
+    const snap = await getDocs(query(collection(db, 'deliveries'), where('sellerId', '==', user.uid)))
+    setAllDeliveries(
+      snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.completedAt?.seconds ?? 0) - (a.completedAt?.seconds ?? 0))
+    )
+  }
+
+  function exportCSV() {
+    const bom  = '﻿'
+    const hdr  = '수취인명,전화번호,주소'
+    const q    = v => `"${(v ?? '').replace(/"/g, '""')}"`
+    const rows = thisWeekSubs.map(s =>
+      [q(s.recipientName ?? s.customerName), q(s.phone), q(s.address)].join(',')
+    )
+    const csv  = bom + [hdr, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `배송목록_${yearMonth}_${currentWeek.replace('week', '')}주차.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   async function toggleComplete(sub) {
@@ -491,6 +549,19 @@ function SellerView({ user }) {
             </div>
           </div>
 
+          {/* 이번 주차 엑셀 다운로드 */}
+          {thisWeekSubs.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <button
+                className="btn-secondary"
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={exportCSV}
+              >
+                📥 이번 {currentWeek.replace('week', '')}주차 배송목록 엑셀 저장 ({thisWeekSubs.length}건)
+              </button>
+            </div>
+          )}
+
           {/* 판매자 배송 캘린더 */}
           <SellerCalendar
             subs={subs}
@@ -522,18 +593,21 @@ function SellerView({ user }) {
                     <div style={{
                       padding: '10px 18px 6px', fontSize: 11,
                       color: 'var(--color-text-muted)',
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6
                     }}>
                       <span>
                         {currentWeek.replace('week', '')}주차 배송 · {thisWeekSubs.length}건
                         {thisWeekCompleted > 0 && ` · ${thisWeekCompleted}건 완료`}
                       </span>
-                      <button
-                        className="btn-secondary btn-sm"
-                        onClick={() => batchComplete(thisWeekSubs.filter(s => !completedIds.has(s.id)))}
-                      >
-                        전체 완료
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn-secondary btn-sm" onClick={exportCSV}>엑셀 저장</button>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => batchComplete(thisWeekSubs.filter(s => !completedIds.has(s.id)))}
+                        >
+                          전체 완료
+                        </button>
+                      </div>
                     </div>
                     {thisWeekSubs.map(sub => {
                       const done = completedIds.has(sub.id)
@@ -568,6 +642,36 @@ function SellerView({ user }) {
                     })}
                   </>
                 )}
+                {/* 발송 완료 내역 */}
+                <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 18px' }}>
+                  <div
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', cursor: 'pointer' }}
+                    onClick={() => { if (!showDelivHist) fetchAllDeliveries(); setShowDelivHist(v => !v) }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-muted)' }}>발송 완료 내역</span>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{showDelivHist ? '▲' : '▼'}</span>
+                  </div>
+                  {showDelivHist && (
+                    allDeliveries.length === 0
+                      ? <div style={{ padding: '8px 0 16px', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>발송 내역이 없어요.</div>
+                      : allDeliveries.map(d => {
+                          const sub = subs.find(s => s.id === d.subId)
+                          return (
+                            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--color-border)', fontSize: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 600 }}>{sub?.recipientName ?? sub?.customerName ?? d.subId}</div>
+                                <div style={{ color: 'var(--color-text-muted)', marginTop: 1 }}>
+                                  {sub?.productName ?? ''}{sub?.qty > 1 ? ` ×${sub.qty}` : ''} · {d.ymw?.replace('_week', ' ') ?? d.ymw}
+                                </div>
+                              </div>
+                              <div style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                                {fmtDate(d.completedAt?.seconds)}
+                              </div>
+                            </div>
+                          )
+                        })
+                  )}
+                </div>
               </div>
             )}
 
@@ -728,11 +832,15 @@ function SellerView({ user }) {
               </div>
             )}
 
-            {/* TAB 4: 충전 확인 */}
+            {/* TAB 4: 충전 확인 + 내역 */}
             {tab === 4 && (
               <div className="card-body">
+                {/* 대기 중 */}
+                <div style={{ padding: '8px 18px 4px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                  입금 대기 ({charges.length}건)
+                </div>
                 {charges.length === 0 ? (
-                  <div style={{ padding: '32px 18px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
+                  <div style={{ padding: '8px 18px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>
                     대기 중인 충전 신청이 없어요.
                   </div>
                 ) : charges.map(c => (
@@ -746,15 +854,32 @@ function SellerView({ user }) {
                         {' → '}충전 ₩{c.totalAmount?.toLocaleString()}
                       </div>
                     </div>
-                    <button
-                      className="btn-primary btn-sm"
-                      style={{ flexShrink: 0 }}
-                      onClick={() => confirmCharge(c)}
-                    >
+                    <button className="btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => confirmCharge(c)}>
                       확인
                     </button>
                   </div>
                 ))}
+                {/* 충전 내역 */}
+                <div style={{ borderTop: '1px solid var(--color-border)', margin: '8px 18px 0' }}>
+                  <div style={{ padding: '10px 0 4px', fontSize: 11, fontWeight: 700, color: 'var(--color-success)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                    충전 완료 내역 ({chargeHistory.length}건)
+                  </div>
+                  {chargeHistory.length === 0 ? (
+                    <div style={{ padding: '8px 0 16px', fontSize: 12, color: 'var(--color-text-muted)' }}>충전 내역이 없어요.</div>
+                  ) : chargeHistory.map(c => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--color-border)', fontSize: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{c.userName || c.userEmail}</div>
+                        <div style={{ color: 'var(--color-text-muted)', marginTop: 1 }}>
+                          ₩{c.amount?.toLocaleString()} + 보너스 ₩{(c.bonusAmount ?? 0)?.toLocaleString()} = ₩{c.totalAmount?.toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                        {fmtDate(c.confirmedAt?.seconds ?? c.createdAt?.seconds)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -893,14 +1018,43 @@ function SellerView({ user }) {
 //  판매자 배송 캘린더
 // ──────────────────────────────────────────────────────────
 function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggleWeek }) {
+  const [expandedCustomDay, setExpandedCustomDay] = useState(null)
   const month = new Date().getMonth() + 1
 
   const grouped = { week1: [], week2: [], week3: [], week4: [] }
+  const customByDay = {}
   subs.forEach(sub => {
-    if (sub.status !== 'cancelled' && sub.period in grouped) {
-      grouped[sub.period].push(sub)
+    if (sub.status === 'cancelled') return
+    if (sub.period in grouped) grouped[sub.period].push(sub)
+    else if (sub.period === 'custom' && sub.customDate) {
+      const d = new Date(sub.customDate + 'T00:00:00').getDate()
+      if (!customByDay[d]) customByDay[d] = []
+      customByDay[d].push(sub)
     }
   })
+
+  const calItem = (sub) => {
+    const done = completedIds.has(sub.id)
+    return (
+      <div key={sub.id} className="sel-cal-item">
+        <div className={`sel-cal-dot${done ? ' done' : sub.status === 'active' ? ' active' : ''}`} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: done ? 'var(--color-text-muted)' : 'var(--color-text)' }}>
+            {sub.recipientName ?? sub.customerName}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1 }}>
+            {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''}{sub.phone ? ` · ${sub.phone}` : ''}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {sub.address}
+          </div>
+        </div>
+        <span className={`badge ${done ? 'badge-muted' : sub.status === 'active' ? 'badge-success' : 'badge-muted'}`}>
+          {done ? '완료' : sub.status === 'active' ? '활성' : '정지'}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 14 }}>
@@ -909,10 +1063,10 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{month}월</span>
       </div>
       {['week1', 'week2', 'week3', 'week4'].map((week, idx) => {
-        const weekSubs        = grouped[week]
-        const isExpanded      = expandedWeek === week
-        const isCurrent       = week === currentWeek
-        const completedCount  = weekSubs.filter(s => completedIds.has(s.id)).length
+        const weekSubs       = grouped[week]
+        const isExpanded     = expandedWeek === week
+        const isCurrent      = week === currentWeek
+        const completedCount = weekSubs.filter(s => completedIds.has(s.id)).length
 
         return (
           <div key={week} className={`sel-cal-week${isCurrent ? ' current' : ''}`}>
@@ -920,51 +1074,42 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {isCurrent && <span className="sel-cal-now">이번 주</span>}
                 <span className="sel-cal-label">{idx + 1}주차</span>
-                <span className={`badge ${weekSubs.length > 0 ? 'badge-primary' : 'badge-muted'}`}>
-                  {weekSubs.length}건
-                </span>
+                <span className={`badge ${weekSubs.length > 0 ? 'badge-primary' : 'badge-muted'}`}>{weekSubs.length}건</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {isCurrent && weekSubs.length > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                    {completedCount}/{weekSubs.length} 완료
-                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{completedCount}/{weekSubs.length} 완료</span>
                 )}
-                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  {isExpanded ? '▲' : '▼'}
-                </span>
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{isExpanded ? '▲' : '▼'}</span>
               </div>
             </div>
-
             {isExpanded && weekSubs.length === 0 && (
-              <div style={{ padding: '6px 18px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>
-                이 주차 배송 없음
-              </div>
+              <div style={{ padding: '6px 18px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>이 주차 배송 없음</div>
             )}
+            {isExpanded && weekSubs.map(calItem)}
+          </div>
+        )
+      })}
 
-            {isExpanded && weekSubs.map(sub => {
-              const done = completedIds.has(sub.id)
-              return (
-                <div key={sub.id} className="sel-cal-item">
-                  <div className={`sel-cal-dot${done ? ' done' : sub.status === 'active' ? ' active' : ''}`} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: done ? 'var(--color-text-muted)' : 'var(--color-text)' }}>
-                      {sub.recipientName ?? sub.customerName}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1 }}>
-                      {sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''}
-                      {sub.phone ? ` · ${sub.phone}` : ''}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {sub.address}
-                    </div>
-                  </div>
-                  <span className={`badge ${done ? 'badge-muted' : sub.status === 'active' ? 'badge-success' : 'badge-muted'}`}>
-                    {done ? '완료' : sub.status === 'active' ? '활성' : '정지'}
-                  </span>
-                </div>
-              )
-            })}
+      {/* 특정일 */}
+      {Object.entries(customByDay).sort(([a],[b]) => Number(a)-Number(b)).map(([day, daySubs]) => {
+        const isExpanded     = expandedCustomDay === day
+        const completedCount = daySubs.filter(s => completedIds.has(s.id)).length
+        return (
+          <div key={day} className="sel-cal-week">
+            <div className="sel-cal-head" onClick={() => setExpandedCustomDay(isExpanded ? null : day)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="sel-cal-label">매월 {day}일</span>
+                <span className={`badge ${daySubs.length > 0 ? 'badge-primary' : 'badge-muted'}`}>{daySubs.length}건</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {completedCount > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{completedCount}/{daySubs.length} 완료</span>
+                )}
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{isExpanded ? '▲' : '▼'}</span>
+              </div>
+            </div>
+            {isExpanded && daySubs.map(calItem)}
           </div>
         )
       })}
@@ -1023,6 +1168,9 @@ function CustomerView({ user, resetRef }) {
   const [chargeBanner,  setChargeBanner] = useState('')
   const [showLowBalance, setShowLowBalance] = useState(false)
   const [loaded,        setLoaded]       = useState({ wallet: false, subs: false })
+  const [showHistory,   setShowHistory]  = useState(false)
+  const [history,       setHistory]      = useState([])
+  const [histLoading,   setHistLoading]  = useState(false)
 
   useEffect(() => {
     if (resetRef) {
@@ -1033,7 +1181,8 @@ function CustomerView({ user, resetRef }) {
         setQty(1)
         setForm({
           period: 'week2', customDate: '', recipientName: '',
-          phone: '', address: localStorage.getItem('sublink_address') ?? '', addressDetail: '',
+          phone: '', address: localStorage.getItem('sublink_address') ?? '',
+          addressDetail: localStorage.getItem('sublink_address_detail') ?? '',
         })
       }
     }
@@ -1072,6 +1221,23 @@ function CustomerView({ user, resetRef }) {
     setLoaded(prev => ({ ...prev, subs: true }))
   }
 
+  async function fetchHistory() {
+    setHistLoading(true)
+    const [chargesSnap, deductionsSnap, withdrawalsSnap] = await Promise.all([
+      getDocs(query(collection(db, 'charges'),     where('userId', '==', user.uid))),
+      getDocs(query(collection(db, 'deductions'),  where('userId', '==', user.uid))),
+      getDocs(query(collection(db, 'withdrawals'), where('userId', '==', user.uid))),
+    ])
+    const items = [
+      ...chargesSnap.docs.map(d    => ({ id: d.id, ...d.data(), _type: 'charge' })),
+      ...deductionsSnap.docs.map(d => ({ id: d.id, ...d.data(), _type: 'deduction' })),
+      ...withdrawalsSnap.docs.map(d => ({ id: d.id, ...d.data(), _type: 'withdrawal' })),
+    ]
+    items.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))
+    setHistory(items)
+    setHistLoading(false)
+  }
+
   useEffect(() => {
     if (!loaded.wallet || !loaded.subs) return
     const monthlyTotal = mySubs
@@ -1087,14 +1253,14 @@ function CustomerView({ user, resetRef }) {
     setQty(1)
     setStep(1)
     const latest = [...mySubs]
-      .filter(s => s.phone || s.address)
+      .filter(s => s.phone || s.recipientName)
       .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0))[0]
     setForm(f => ({
       ...f,
       recipientName: latest?.recipientName ?? localStorage.getItem('sublink_profile_name') ?? user.displayName ?? '',
       phone: latest?.phone ?? localStorage.getItem('sublink_profile_phone') ?? '',
-      address: latest?.address ?? localStorage.getItem('sublink_address') ?? '',
-      addressDetail: '',
+      address: localStorage.getItem('sublink_address') ?? '',
+      addressDetail: localStorage.getItem('sublink_address_detail') ?? '',
     }))
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -1135,6 +1301,7 @@ function CustomerView({ user, resetRef }) {
       setSaving(false)
       return
     }
+    localStorage.setItem('sublink_address_detail', form.addressDetail)
     setSaving(false)
     setDone({ total })
     fetchMySubs()
@@ -1182,7 +1349,7 @@ function CustomerView({ user, resetRef }) {
     setSelected(null)
     setStep(1)
     setQty(1)
-    setForm({ period: 'week2', customDate: '', recipientName: '', phone: '', address: localStorage.getItem('sublink_address') ?? '', addressDetail: '' })
+    setForm({ period: 'week2', customDate: '', recipientName: '', phone: '', address: localStorage.getItem('sublink_address') ?? '', addressDetail: localStorage.getItem('sublink_address_detail') ?? '' })
   }
 
   if (!SELLER_UID) return (
@@ -1229,13 +1396,22 @@ function CustomerView({ user, resetRef }) {
         <div className="pause-banner" style={{ background: 'var(--color-primary)' }}>{chargeBanner}</div>
       )}
 
+      {/* 홍보 문구 */}
+      <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 10, letterSpacing: '.01em' }}>
+        매번 주문하기 귀찮을 땐 <strong style={{ color: 'var(--color-primary)' }}>SubLink</strong>
+      </div>
+
       {/* 구독머니 배너 */}
-      <div className="wallet-banner">
+      <div
+        className="wallet-banner"
+        style={{ cursor: 'pointer' }}
+        onClick={() => { setShowHistory(true); fetchHistory() }}
+      >
         <div className="wallet-banner-left">
-          <div className="wallet-banner-label">💰 구독머니</div>
+          <div className="wallet-banner-label">💰 구독머니 · 거래내역 보기</div>
           <div className="wallet-banner-balance">₩{walletBalance.toLocaleString()}</div>
         </div>
-        <button className="btn-secondary btn-sm" onClick={() => setShowCharge(true)}>충전</button>
+        <button className="btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setShowCharge(true) }}>충전</button>
       </div>
 
       {/* 상품 목록 */}
@@ -1292,6 +1468,41 @@ function CustomerView({ user, resetRef }) {
           onPause={() => handlePause(retentionSub)}
           onConfirmCancel={(reason) => doCancel(retentionSub, reason)}
         />
+      )}
+
+      {showHistory && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end' }}
+          onClick={e => e.target === e.currentTarget && setShowHistory(false)}
+        >
+          <div style={{ width: '100%', maxWidth: 'var(--container-max)', margin: '0 auto', background: '#fff', borderRadius: '16px 16px 0 0', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px 12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>거래 내역</div>
+              <button onClick={() => setShowHistory(false)}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--color-text-muted)', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '8px 24px 32px' }}>
+              {histLoading ? (
+                <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>불러오는 중…</div>
+              ) : history.length === 0 ? (
+                <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>거래 내역이 없어요.</div>
+              ) : history.map(item => {
+                const { icon, text, color, sub: subText } = histLabel(item)
+                return (
+                  <div key={item.id} className="list-item">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color }}>{icon} {text}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>{subText}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                      {fmtDate(item.createdAt?.seconds)}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {showLowBalance && (
@@ -1520,12 +1731,15 @@ function CustomerMonthCalendar({ subs }) {
   const monthIdx   = now.getMonth()
   const monthLabel = `${monthIdx + 1}월`
   const daysInMonth = new Date(year, monthIdx + 1, 0).getDate()
-  const firstDow   = new Date(year, monthIdx, 1).getDay() // 0=일
+  const firstDow   = new Date(year, monthIdx, 1).getDay()
+
+  const [expandedWeek, setExpandedWeek] = useState(null)
+  const [expandedDay,  setExpandedDay]  = useState(null)
 
   const activeSubs = subs.filter(s => s.status !== 'cancelled')
 
   const weekGroups = { week1: [], week2: [], week3: [], week4: [] }
-  const customByDay = {} // day → [sub]
+  const customByDay = {}
   activeSubs.forEach(sub => {
     if (sub.period in weekGroups) weekGroups[sub.period].push(sub)
     else if (sub.period === 'custom' && sub.customDate) {
@@ -1549,6 +1763,7 @@ function CustomerMonthCalendar({ subs }) {
   for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7))
 
   const DOW = ['일', '월', '화', '수', '목', '금', '토']
+  const WK_LABEL = { week1:'1주차', week2:'2주차', week3:'3주차', week4:'4주차' }
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 14 }}>
@@ -1572,54 +1787,91 @@ function CustomerMonthCalendar({ subs }) {
             return Object.entries(cnt).sort(([,a],[,b]) => b-a)[0]?.[0]
           })()
           const rowSubs = domWeek ? weekGroups[domWeek] : []
+          const isExpanded = expandedWeek === domWeek && rowSubs.length > 0
           return (
-            <div key={ri} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 2 }}>
-              {row.map((day, ci) => {
-                const hasSub  = day && (rowSubs.length > 0 || (customByDay[day]?.length > 0))
-                const isToday = day === now.getDate()
-                return (
-                  <div key={ci} style={{
-                    textAlign: 'center', padding: '5px 1px', borderRadius: 6,
-                    background: hasSub ? 'var(--color-primary-light)' : 'transparent',
-                    border: isToday ? '2px solid var(--color-primary)' : '2px solid transparent',
-                  }}>
-                    {day && (
-                      <>
-                        <div style={{ fontSize: 12, fontWeight: isToday ? 800 : hasSub ? 600 : 400,
-                          color: ci === 0 ? 'var(--color-error)' : ci === 6 ? 'var(--color-primary)' : hasSub ? 'var(--color-primary)' : 'var(--color-text)' }}>
-                          {day}
-                        </div>
-                        {customByDay[day]?.length > 0 && (
-                          <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--color-primary)', margin: '1px auto 0' }} />
-                        )}
-                      </>
-                    )}
+            <div key={ri}>
+              <div
+                style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 2,
+                  cursor: rowSubs.length > 0 ? 'pointer' : 'default',
+                  borderRadius: 6, outline: isExpanded ? '2px solid var(--color-primary)' : 'none' }}
+                onClick={() => rowSubs.length > 0 && setExpandedWeek(v => v === domWeek ? null : domWeek)}
+              >
+                {row.map((day, ci) => {
+                  const hasSub  = day && (rowSubs.length > 0 || (customByDay[day]?.length > 0))
+                  const isToday = day === now.getDate()
+                  return (
+                    <div key={ci} style={{
+                      textAlign: 'center', padding: '5px 1px', borderRadius: 6,
+                      background: hasSub ? 'var(--color-primary-light)' : 'transparent',
+                      border: isToday ? '2px solid var(--color-primary)' : '2px solid transparent',
+                    }}>
+                      {day && (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: isToday ? 800 : hasSub ? 600 : 400,
+                            color: ci === 0 ? 'var(--color-error)' : ci === 6 ? 'var(--color-primary)' : hasSub ? 'var(--color-primary)' : 'var(--color-text)' }}>
+                            {day}
+                          </div>
+                          {customByDay[day]?.length > 0 && (
+                            <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--color-primary)', margin: '1px auto 0' }} />
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {isExpanded && (
+                <div style={{ background: 'var(--color-primary-light)', borderRadius: 8, padding: '8px 12px', marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary)', marginBottom: 4 }}>
+                    {WK_LABEL[domWeek]} 배송 상품
                   </div>
-                )
-              })}
+                  {rowSubs.map(s => (
+                    <div key={s.id} style={{ fontSize: 12, color: 'var(--color-text)', display: 'flex', justifyContent: 'space-between', paddingBottom: 2 }}>
+                      <span>{s.productName}</span>
+                      <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>×{s.qty ?? 1}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
-        {/* 범례 */}
+        {/* 특정일 */}
+        {Object.entries(customByDay).map(([day, ds]) => (
+          <div key={day}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '4px 2px', cursor: 'pointer' }}
+              onClick={() => setExpandedDay(v => v === day ? null : day)}
+            >
+              <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--color-primary)', flexShrink: 0 }} />
+              <span style={{ color: 'var(--color-text-muted)' }}>매월 {day}일</span>
+              <span>{ds.map(s => `${s.productName}${s.qty > 1 ? ` ×${s.qty}` : ''}`).join(', ')}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--color-primary)' }}>{expandedDay === day ? '▲' : '▼'}</span>
+            </div>
+            {expandedDay === day && (
+              <div style={{ background: 'var(--color-primary-light)', borderRadius: 8, padding: '8px 12px', marginBottom: 4 }}>
+                {ds.map(s => (
+                  <div key={s.id} style={{ fontSize: 12, color: 'var(--color-text)', display: 'flex', justifyContent: 'space-between', paddingBottom: 2 }}>
+                    <span>{s.productName}</span>
+                    <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>×{s.qty ?? 1}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {/* 범례 (주차 구독) */}
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {['week1','week2','week3','week4'].map(wk => {
             const ws = weekGroups[wk]; if (!ws.length) return null
-            const lbl = { week1:'1주차', week2:'2주차', week3:'3주차', week4:'4주차' }[wk]
             return (
               <div key={wk} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                 <div style={{ width: 12, height: 12, borderRadius: 3, background: 'var(--color-primary-light)', border: '1px solid var(--color-primary)', flexShrink: 0 }} />
-                <span style={{ color: 'var(--color-text-muted)' }}>{lbl}</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>{WK_LABEL[wk]}</span>
                 <span>{ws.map(s => `${s.productName}${s.qty > 1 ? ` ×${s.qty}` : ''}`).join(', ')}</span>
               </div>
             )
           })}
-          {Object.entries(customByDay).map(([day, ds]) => (
-            <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--color-primary)', flexShrink: 0 }} />
-              <span style={{ color: 'var(--color-text-muted)' }}>매월 {day}일</span>
-              <span>{ds.map(s => `${s.productName}${s.qty > 1 ? ` ×${s.qty}` : ''}`).join(', ')}</span>
-            </div>
-          ))}
         </div>
       </div>
     </div>

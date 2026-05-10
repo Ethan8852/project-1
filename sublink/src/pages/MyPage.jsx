@@ -181,7 +181,7 @@ export default function MyPage() {
     <>
       <nav className="topnav">
         <div className="topnav-inner">
-          <span className="logo">Sub<em>Link</em></span>
+          <span className="logo" style={{ cursor: 'pointer' }} onClick={() => navigate('/app')}>Sub<em>Link</em></span>
           <button className="nav-link" onClick={() => navigate('/app')}>
             ← 홈
           </button>
@@ -356,7 +356,7 @@ export default function MyPage() {
                 ×
               </button>
             </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 32px' }}>
+            <div style={{ overflowY: 'auto', padding: '8px 8px 32px' }}>
               {histLoading ? (
                 <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)' }}>불러오는 중…</div>
               ) : history.length === 0 ? (
