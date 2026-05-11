@@ -565,6 +565,59 @@
   .day-modal-add .add-input { font-size:14px; padding:10px 14px; }
   .day-modal-add .add-btn   { padding:10px 18px; font-size:14px; }
 
+  /* ══ 공유 버튼 ══ */
+  .share-btn {
+    background:rgba(255,255,255,0.22); border:none; border-radius:50%;
+    width:30px; height:30px; cursor:pointer; color:#fff; font-size:15px;
+    display:flex; align-items:center; justify-content:center;
+    transition:all 0.22s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .share-btn:hover { background:rgba(255,255,255,0.38); transform:scale(1.08); }
+
+  /* ══ 공유 바텀시트 ══ */
+  .share-overlay {
+    position:fixed; inset:0; background:rgba(100,70,150,0.18);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    z-index:310; opacity:0; pointer-events:none; transition:opacity 0.24s ease;
+  }
+  .share-overlay.active { opacity:1; pointer-events:all; }
+  .share-sheet {
+    position:fixed; left:0; right:0; bottom:-100%;
+    background:rgba(249,248,255,0.97);
+    backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%);
+    border-radius:28px 28px 0 0; z-index:311;
+    transition:bottom 0.38s cubic-bezier(0.32,1.28,0.64,1);
+    padding:0 0 env(safe-area-inset-bottom,16px);
+    box-shadow:0 -8px 48px rgba(150,100,200,0.16);
+  }
+  .share-sheet.active { bottom:0; }
+  .share-sheet-handle { width:40px; height:4.5px; background:rgba(205,180,219,0.35); border-radius:3px; margin:12px auto 0; }
+  .share-sheet-title { font-size:13px; font-weight:700; color:#AEAEB2; text-align:center; padding:14px 0 6px; letter-spacing:0.3px; }
+  .share-row {
+    display:flex; gap:0; border-top:0.5px solid rgba(205,180,219,0.18); border-bottom:0.5px solid rgba(205,180,219,0.18);
+    margin:0 0 8px;
+  }
+  .share-item {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:7px; padding:18px 8px; cursor:pointer; border:none; background:none; font-family:inherit;
+    transition:background 0.18s ease; border-right:0.5px solid rgba(205,180,219,0.14);
+  }
+  .share-item:last-child { border-right:none; }
+  .share-item:hover { background:rgba(205,180,219,0.08); }
+  .share-item:active { background:rgba(205,180,219,0.16); transform:scale(0.97); }
+  .share-icon { width:52px; height:52px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px; }
+  .share-icon.save   { background:linear-gradient(135deg,#CDB4DB,#FFAFCC); }
+  .share-icon.kakao  { background:#FEE500; }
+  .share-icon.sms    { background:linear-gradient(135deg,#34C759,#30D158); }
+  .share-label { font-size:11px; font-weight:600; color:#6E6E73; letter-spacing:-0.1px; }
+  .share-cancel {
+    display:block; width:calc(100% - 32px); margin:0 16px 12px;
+    padding:14px; background:rgba(205,180,219,0.12); border:none; border-radius:14px;
+    font-size:15px; font-weight:600; color:#9B7BB4; cursor:pointer; font-family:inherit;
+    transition:background 0.18s;
+  }
+  .share-cancel:hover { background:rgba(205,180,219,0.22); }
+
   /* ══ 모바일 ══ */
   @media (max-width: 430px) {
     header { padding: 8px 12px; }
@@ -1117,7 +1170,15 @@
       <div class="day-modal-title" id="dayModalTitle"></div>
       <div class="day-modal-type"  id="dayModalType"></div>
     </div>
-    <button class="day-modal-close" onclick="closeDayModal()">×</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="share-btn" onclick="openShareSheet()" title="공유">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+      </button>
+      <button class="day-modal-close" onclick="closeDayModal()">×</button>
+    </div>
   </div>
   <div class="day-modal-body" id="dayModalBody"></div>
   <div class="day-modal-add" id="dayModalAdd" style="display:none;">
@@ -1125,6 +1186,28 @@
       onkeydown="if(event.key==='Enter'){event.preventDefault();addDayTask();}">
     <button class="add-btn" onclick="addDayTask()">추가</button>
   </div>
+</div>
+
+<!-- 공유 바텀시트 -->
+<div class="share-overlay" id="shareOverlay" onclick="closeShareSheet()"></div>
+<div class="share-sheet" id="shareSheet">
+  <div class="share-sheet-handle"></div>
+  <div class="share-sheet-title">공유하기</div>
+  <div class="share-row">
+    <button class="share-item" onclick="shareAction('save')">
+      <div class="share-icon save">🖼️</div>
+      <span class="share-label">이미지저장</span>
+    </button>
+    <button class="share-item" onclick="shareAction('kakao')">
+      <div class="share-icon kakao">💬</div>
+      <span class="share-label">카카오톡</span>
+    </button>
+    <button class="share-item" onclick="shareAction('sms')">
+      <div class="share-icon sms">💬</div>
+      <span class="share-label">문자</span>
+    </button>
+  </div>
+  <button class="share-cancel" onclick="closeShareSheet()">취소</button>
 </div>
 
 <script>
@@ -2594,6 +2677,149 @@ function openGanttStagePicker(e,taskId){
   document.body.appendChild(picker);
   function closePicker(ev){if(!picker.contains(ev.target)){picker.remove();document.removeEventListener('click',closePicker,true);}}
   setTimeout(()=>document.addEventListener('click',closePicker,true),50);
+}
+
+// ══ 공유 ══
+function openShareSheet(){
+  document.getElementById('shareOverlay').classList.add('active');
+  document.getElementById('shareSheet').classList.add('active');
+}
+function closeShareSheet(){
+  document.getElementById('shareOverlay').classList.remove('active');
+  document.getElementById('shareSheet').classList.remove('active');
+}
+function _buildShareText(dateStr){
+  const data=getDayData(dateStr);
+  const d=new Date(dateStr+'T12:00:00');
+  const days=['일','월','화','수','목','금','토'];
+  const header=`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]}) — ${state.userName||'민재'}의 하루`;
+  const lines=[header,''];
+  const done=(data&&data.done)||[];const todo=(data&&data.todo)||[];const missed=(data&&data.missed)||[];
+  if(todo.length>0){lines.push('📝 할 일');todo.forEach(t=>lines.push(`  ○ ${t.starred?'⭐ ':''}${t.text}`));lines.push('');}
+  if(done.length>0){lines.push('✅ 완료');done.forEach(t=>lines.push(`  ✓ ${t.starred?'⭐ ':''}${t.text}`));lines.push('');}
+  if(missed.length>0){lines.push('❌ 미완료');missed.forEach(t=>lines.push(`  — ${t.text}`));lines.push('');}
+  lines.push('오늘하자제발 · project-six-nu-30.vercel.app');
+  return lines.join('\n');
+}
+function _generateDayImage(dateStr,cb){
+  const data=getDayData(dateStr);
+  const d=new Date(dateStr+'T12:00:00');
+  const days=['일','월','화','수','목','금','토'];
+  const dateLabel=`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
+  const userName=state.userName||'민재';
+  const done=(data&&data.done)||[];const todo=(data&&data.todo)||[];const missed=(data&&data.missed)||[];
+  const allItems=[];
+  todo.forEach(t=>allItems.push({label:(t.starred?'⭐ ':'')+t.text,type:'todo'}));
+  done.forEach(t=>allItems.push({label:(t.starred?'⭐ ':'')+t.text,type:'done'}));
+  missed.forEach(t=>allItems.push({label:t.text,type:'missed'}));
+
+  const W=750,PAD=44,ITEM_H=52,HDR_H=170,FTR_H=64;
+  const H=HDR_H+(allItems.length||1)*ITEM_H+FTR_H+PAD;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const c=cv.getContext('2d');
+
+  // 배경
+  const bg=c.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#F5F2FF');bg.addColorStop(0.5,'#FEF2F7');bg.addColorStop(1,'#F2F7FF');
+  c.fillStyle=bg;c.fillRect(0,0,W,H);
+
+  // 헤더 카드
+  const hg=c.createLinearGradient(0,0,W,HDR_H);
+  hg.addColorStop(0,'#CDB4DB');hg.addColorStop(0.6,'#FFC8DD');hg.addColorStop(1,'#FFAFCC');
+  _roundRect(c,PAD/2,PAD/2,W-PAD,HDR_H-PAD/2,22,hg);
+
+  // 날짜
+  c.fillStyle='rgba(255,255,255,0.75)';c.font='600 22px -apple-system,sans-serif';
+  c.fillText(dateLabel,PAD+12,PAD+44);
+  // 이름
+  c.fillStyle='#fff';c.font='800 32px -apple-system,sans-serif';
+  c.fillText(`${userName}의 하루`,PAD+12,PAD+88);
+  // 통계 뱃지
+  const statText=`완료 ${done.length} · 할일 ${todo.length}`;
+  c.fillStyle='rgba(255,255,255,0.30)';_roundRect(c,PAD+12,PAD+104,180,32,10,null,true);
+  c.fillStyle='rgba(255,255,255,0.82)';c.font='600 14px -apple-system,sans-serif';
+  c.fillText(statText,PAD+24,PAD+124);
+
+  // 아이템 목록
+  let y=HDR_H+8;
+  if(allItems.length===0){
+    c.fillStyle='#C7C7CC';c.font='400 18px -apple-system,sans-serif';
+    c.textAlign='center';c.fillText('오늘의 기록이 없어요',W/2,y+30);c.textAlign='left';
+  }
+  allItems.forEach(item=>{
+    // 카드 배경
+    c.fillStyle='rgba(255,255,255,0.88)';_roundRect(c,PAD/2,y,W-PAD,ITEM_H-6,14,null,true);
+    // 도트
+    const dotX=PAD+10,dotY=y+ITEM_H/2-9;
+    if(item.type==='todo'){c.fillStyle='#CDB4DB';}
+    else if(item.type==='done'){c.fillStyle='#A2D2FF';}
+    else{c.fillStyle='#FFAFCC';}
+    c.beginPath();c.arc(dotX,dotY+6,5,0,Math.PI*2);c.fill();
+    // 텍스트
+    c.fillStyle=item.type==='done'?'#AEAEB2':item.type==='missed'?'#FFAABB':'#1D1D1F';
+    c.font=(item.type==='done'?'400':'500')+' 18px -apple-system,sans-serif';
+    const maxW=W-PAD*2-30;
+    let txt=item.label;
+    if(c.measureText(txt).width>maxW){
+      while(c.measureText(txt+'…').width>maxW&&txt.length>0)txt=txt.slice(0,-1);
+      txt+='…';
+    }
+    c.fillText(txt,PAD+24,y+ITEM_H/2+5);
+    y+=ITEM_H;
+  });
+
+  // 푸터
+  c.fillStyle='#C7C7CC';c.font='400 13px -apple-system,sans-serif';c.textAlign='center';
+  c.fillText('오늘하자제발  ·  project-six-nu-30.vercel.app',W/2,H-22);
+  cb(cv);
+}
+function _roundRect(c,x,y,w,h,r,fill,stroke){
+  c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();
+  if(fill){c.fillStyle=fill;c.fill();}else if(stroke){c.fill();}else{c.fill();}
+}
+async function shareAction(type){
+  closeShareSheet();
+  const dateStr=currentModalDate;if(!dateStr)return;
+  if(type==='sms'){
+    const text=_buildShareText(dateStr);
+    window.location.href='sms:?body='+encodeURIComponent(text);
+    return;
+  }
+  // 이미지 생성
+  showToast('🖼️ 이미지 생성 중…');
+  _generateDayImage(dateStr,async cv=>{
+    cv.toBlob(async blob=>{
+      const d=new Date(dateStr+'T12:00:00');
+      const fname=`오늘하자_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.png`;
+      if(type==='save'){
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+        URL.revokeObjectURL(url);
+        showToast('🖼️ 이미지가 저장됐어요!','success');
+      }else if(type==='kakao'){
+        // 카카오는 Web Share API(모바일에서 카카오톡 앱 공유 가능)
+        if(navigator.share){
+          try{
+            const file=new File([blob],fname,{type:'image/png'});
+            if(navigator.canShare&&navigator.canShare({files:[file]})){
+              await navigator.share({files:[file],title:'오늘하자제발',text:dateStr+'의 할일'});
+            }else{
+              await navigator.share({title:'오늘하자제발',text:_buildShareText(dateStr)});
+            }
+          }catch(e){if(e.name!=='AbortError')showToast('공유를 취소했어요.');}
+        }else{
+          // 데스크톱 폴백: 이미지 저장
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a');a.href=url;a.download=fname;a.click();
+          URL.revokeObjectURL(url);
+          showToast('📱 모바일에서 카카오톡 공유가 가능해요. 이미지를 저장했습니다.');
+        }
+      }
+    },'image/png');
+  });
 }
 
 // ══ 데이터 내보내기/가져오기 ══
