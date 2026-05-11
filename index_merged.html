@@ -893,6 +893,18 @@
     background: rgba(255,255,255,0.98) !important; z-index: 50; filter: blur(0.5px);
   }
 
+  /* ══ 데이터 내보내기/가져오기 ══ */
+  .data-btn {
+    background:rgba(205,180,219,0.12); border:1px solid rgba(205,180,219,0.28);
+    border-radius:var(--radius-sm); padding:3px 10px; font-size:11px; color:#9B7BB4;
+    cursor:pointer; font-family:inherit; font-weight:600;
+    transition:all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .data-btn:hover { background:rgba(205,180,219,0.28); transform:scale(1.04); }
+  .data-btn.import { color:#5A90BE; border-color:rgba(162,210,255,0.35); background:rgba(162,210,255,0.10); }
+  .data-btn.import:hover { background:rgba(162,210,255,0.24); }
+  .hint-data-row { display:flex; align-items:center; justify-content:center; gap:8px; padding:2px 0 4px; }
+
   /* ══ 앰비언트 애니메이션 ══ */
   @keyframes card-ambient {
     0%, 100% { box-shadow: var(--shadow-card); }
@@ -1032,6 +1044,11 @@
   </div>
   <div class="hint">
     <kbd>Enter</kbd> 추가 &nbsp;·&nbsp; <kbd>Ctrl+Enter</kbd> ⭐ 중요 추가 &nbsp;·&nbsp; 📌 장기업무
+  </div>
+  <div class="hint-data-row">
+    <button class="data-btn" onclick="exportData()" title="데이터를 JSON 파일로 백업">💾 데이터 내보내기</button>
+    <button class="data-btn import" onclick="document.getElementById('importFileInput').click()" title="JSON 파일에서 데이터 복원">📂 데이터 가져오기</button>
+    <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importData(event)">
   </div>
 </div>
 
@@ -2428,6 +2445,36 @@ function openGanttStagePicker(e,taskId){
   document.body.appendChild(picker);
   function closePicker(ev){if(!picker.contains(ev.target)){picker.remove();document.removeEventListener('click',closePicker,true);}}
   setTimeout(()=>document.addEventListener('click',closePicker,true),50);
+}
+
+// ══ 데이터 내보내기/가져오기 ══
+function exportData(){
+  const data=localStorage.getItem('ijma_v3');
+  if(!data){showToast('저장된 데이터가 없어요.');return;}
+  const blob=new Blob([data],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const d=new Date();
+  a.href=url;a.download=`오늘하자_백업_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`;
+  a.click();URL.revokeObjectURL(url);
+  showToast('💾 데이터 내보내기 완료!','success');
+}
+function importData(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const text=ev.target.result;
+      JSON.parse(text); // 유효성 검사
+      if(confirm('기존 데이터를 덮어씁니다. 계속할까요?')){
+        localStorage.setItem('ijma_v3',text);
+        showToast('📂 가져오기 완료! 새로고침합니다…','success');
+        setTimeout(()=>location.reload(),1200);
+      }
+    }catch(err){showToast('❌ 올바른 백업 파일이 아닙니다.');}
+  };
+  reader.readAsText(file);
+  e.target.value='';
 }
 
 // ══ 초기화 ══
