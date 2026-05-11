@@ -63,6 +63,13 @@
   }
   .header-left { display: flex; align-items: center; }
   .header-title { font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; white-space: nowrap; }
+  #userNameSpan { cursor: pointer; border-bottom: 1px dashed transparent; transition: color 0.18s, border-color 0.18s; }
+  #userNameSpan:hover { color: var(--primary); border-bottom-color: var(--primary); }
+  .user-name-input {
+    font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: -0.2px;
+    border: none; border-bottom: 1.5px solid var(--primary); background: transparent;
+    outline: none; font-family: inherit; width: 5em; caret-color: var(--primary);
+  }
   .header-date  { font-size: 10px; color: var(--text-sub); margin-top: 1px; font-weight: 400; white-space: nowrap; }
 
   /* ══ 중앙 로고 ══ */
@@ -984,7 +991,7 @@
 <header>
   <div class="header-left">
     <div>
-      <div class="header-title">민재의 하루</div>
+      <div class="header-title" id="headerTitle"><span id="userNameSpan" onclick="startUserNameEdit()" title="클릭해서 이름 수정">민재</span>의 하루</div>
       <div class="header-date" id="headerDate"></div>
     </div>
   </div>
@@ -1192,11 +1199,43 @@ function updateAuthUI(user){
   if(!row)return;
   if(user){
     const avatar=user.photoURL?`<img class="auth-avatar" src="${user.photoURL}" referrerpolicy="no-referrer">`:'';
-    const name=escapeHtml(user.displayName||user.email||'');
-    row.innerHTML=`${avatar}<span style="font-size:10px;color:#6E6E73;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span><div class="sync-dot" id="syncDot" title="동기화됨"></div><button class="auth-btn logout" onclick="signOut()">로그아웃</button>`;
+    row.innerHTML=`${avatar}<div class="sync-dot" id="syncDot" title="동기화됨"></div><button class="auth-btn logout" onclick="signOut()">로그아웃</button>`;
+    // 이름 미설정 시 Google 이름 첫 단어 사용
+    if(!state.userName){
+      const first=(user.displayName||user.email||'').split(/[\s@]/)[0];
+      if(first){state.userName=first;saveState();}
+    }
+    _renderUserName();
   }else{
     row.innerHTML=`<button class="auth-btn login" onclick="signInWithGoogle()" id="loginBtn">G 로그인</button>`;
+    _renderUserName();
   }
+}
+function _renderUserName(){
+  const title=document.getElementById('headerTitle');
+  if(!title)return;
+  const name=escapeHtml(state.userName||'민재');
+  title.innerHTML=`<span id="userNameSpan" onclick="startUserNameEdit()" title="클릭해서 이름 수정">${name}</span>의 하루`;
+}
+function startUserNameEdit(){
+  const title=document.getElementById('headerTitle');
+  if(!title)return;
+  const cur=state.userName||'민재';
+  title.innerHTML=`<input class="user-name-input" id="userNameInput" value="${escapeHtml(cur)}" maxlength="12" onblur="saveUserName()" onkeydown="handleUserNameKey(event)">의 하루`;
+  const inp=document.getElementById('userNameInput');
+  if(inp){inp.focus();inp.select();}
+}
+function saveUserName(){
+  const inp=document.getElementById('userNameInput');
+  if(!inp)return;
+  const v=inp.value.trim();
+  state.userName=v||'민재';
+  saveState();
+  _renderUserName();
+}
+function handleUserNameKey(e){
+  if(e.key==='Enter'){e.preventDefault();saveUserName();}
+  if(e.key==='Escape'){e.preventDefault();_renderUserName();}
 }
 function setSyncDot(status){
   const dot=document.getElementById('syncDot');
@@ -2606,6 +2645,7 @@ document.addEventListener('keydown',e=>{
 loadState();
 checkDayTransition();
 state.tasks.forEach(scheduleAlarm);
+_renderUserName();
 initFirebase();
 updateHeader();
 switchTab('todo');
