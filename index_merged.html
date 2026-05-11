@@ -13,6 +13,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <style>
   /* ══ CSS 변수 ══ */
   :root {
@@ -634,6 +635,55 @@
     .add-btn { font-size: 14px; padding: 10px 13px; }
   }
 
+  /* ══ 알림 팝업 ══ */
+  .alarm-overlay {
+    position:fixed; inset:0; background:rgba(100,70,150,0.22);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    z-index:400; opacity:0; pointer-events:none; transition:opacity 0.22s ease;
+  }
+  .alarm-overlay.active { opacity:1; pointer-events:all; }
+  .alarm-popup {
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(0.92);
+    background:rgba(249,248,255,0.97); backdrop-filter:blur(30px) saturate(180%);
+    -webkit-backdrop-filter:blur(30px) saturate(180%);
+    border-radius:24px; z-index:401; padding:22px 20px 18px;
+    min-width:280px; max-width:340px; width:90%;
+    box-shadow:0 8px 48px rgba(150,100,200,0.22);
+    opacity:0; pointer-events:none;
+    transition:opacity 0.22s ease, transform 0.26s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .alarm-popup.active { opacity:1; pointer-events:all; transform:translate(-50%,-50%) scale(1); }
+  .alarm-popup-header {
+    display:flex; align-items:center; gap:8px; margin-bottom:14px;
+  }
+  .alarm-popup-icon { font-size:22px; line-height:1; }
+  .alarm-popup-title { font-size:15px; font-weight:700; color:var(--text); flex:1; }
+  .alarm-popup-close {
+    width:26px; height:26px; border-radius:50%; border:none;
+    background:rgba(205,180,219,0.18); color:#9B7BB4;
+    font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background 0.18s;
+  }
+  .alarm-popup-close:hover { background:rgba(205,180,219,0.35); }
+  .alarm-popup-list {
+    max-height:220px; overflow-y:auto; margin-bottom:14px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  .alarm-popup-item {
+    font-size:13px; color:var(--text); background:rgba(205,180,219,0.10);
+    border-radius:10px; padding:9px 12px;
+    border-left:3px solid var(--primary);
+    display:flex; align-items:center; gap:6px;
+  }
+  .alarm-popup-item.starred { border-left-color:var(--accent); }
+  .alarm-popup-btn {
+    width:100%; padding:10px; border-radius:12px; border:none;
+    background:linear-gradient(135deg,var(--primary),var(--accent));
+    color:#fff; font-size:14px; font-weight:700; font-family:inherit;
+    cursor:pointer; transition:filter 0.18s;
+  }
+  .alarm-popup-btn:hover { filter:brightness(1.07); }
+
   /* ══ 인쇄 ══ */
   @media print {
     header,.tabs,.toast-wrap,.add-area,.cal-nav,.pdf-btn,
@@ -1076,6 +1126,18 @@
 
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- 알림 팝업 -->
+<div class="alarm-overlay" id="alarmOverlay" onclick="closeAlarmPopup()"></div>
+<div class="alarm-popup" id="alarmPopup">
+  <div class="alarm-popup-header">
+    <span class="alarm-popup-icon">🔔</span>
+    <span class="alarm-popup-title">아직 완료 못한 할 일</span>
+    <button class="alarm-popup-close" onclick="closeAlarmPopup()">✕</button>
+  </div>
+  <div class="alarm-popup-list" id="alarmPopupList"></div>
+  <button class="alarm-popup-btn" onclick="closeAlarmPopup()">확인</button>
+</div>
+
 <!-- 할 일 탭 -->
 <div class="tab-panel active" id="panel-todo">
   <div id="movedNotice" style="display:none" class="moved-notice"></div>
@@ -1253,6 +1315,10 @@ const FIREBASE_CONFIG={
   messagingSenderId:'971814444647',
   appId:'1:971814444647:web:9cd620bff206b5622a3ec2'
 };
+let _messaging=null;
+// Firebase Console → 프로젝트 설정 → 클라우드 메시징 → 웹 푸시 인증서에서 발급받은 키
+const VAPID_KEY='BHQKJSsXvU3v7R9b2V-e5YXAXh0w3w2hCCbfRpg8K3EEG0x1PsA3wWqL9n6rVzX5kMKDFnOqTaHdEzGUmZ8KOh8';
+
 function initFirebase(){
   try{
     if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
@@ -1261,9 +1327,24 @@ function initFirebase(){
     _auth.onAuthStateChanged(user=>{
       currentUser=user;
       updateAuthUI(user);
-      if(user)loadFromFirestore();
+      if(user){loadFromFirestore();initMessaging();}
     });
   }catch(e){console.warn('Firebase init err:',e);}
+}
+async function initMessaging(){
+  try{
+    if(typeof firebase.messaging!=='function')return;
+    if(!('serviceWorker' in navigator))return;
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted')return;
+    const reg=await navigator.serviceWorker.ready;
+    _messaging=firebase.messaging();
+    const token=await _messaging.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
+    if(token&&token!==state.fcmToken){
+      state.fcmToken=token;
+      saveState();
+    }
+  }catch(e){console.warn('FCM init err:',e);}
 }
 function signInWithGoogle(){
   if(!_auth)return;
@@ -1477,14 +1558,28 @@ function celebrate(text){
 
 // ══ 알림 타이머 ══
 function scheduleAlarm(task){
+  // 개별 타이머 대신 단일 전역 시간당 체크 사용 (startHourlyAlarmCheck)
   clearInterval(alarmTimers[task.id]);
-  alarmTimers[task.id]=setInterval(()=>{
-    const t=state.tasks.find(t=>t.id===task.id);
-    if(!t||t.done){clearInterval(alarmTimers[task.id]);return;}
-    if(isOverdue(t.registeredAt)&&!isQuietHours()){
-      showToast(`<strong>🔔 재알림</strong> — "${escapeHtml(t.text)}" 아직 완료 안 하셨어요.`);
-    }
-  },60*60*1000);
+}
+
+function showAlarmPopup(){
+  if(isQuietHours())return;
+  const overdue=state.tasks.filter(t=>!t.done&&isOverdue(t.registeredAt));
+  if(!overdue.length)return;
+  const list=document.getElementById('alarmPopupList');
+  list.innerHTML=overdue.map(t=>`
+    <div class="alarm-popup-item${t.starred?' starred':''}">
+      ${t.starred?'⭐ ':''}<span>${escapeHtml(t.text)}</span>
+    </div>`).join('');
+  document.getElementById('alarmOverlay').classList.add('active');
+  document.getElementById('alarmPopup').classList.add('active');
+}
+function closeAlarmPopup(){
+  document.getElementById('alarmOverlay').classList.remove('active');
+  document.getElementById('alarmPopup').classList.remove('active');
+}
+function startHourlyAlarmCheck(){
+  setInterval(()=>showAlarmPopup(), 60*60*1000);
 }
 
 // ══ 진행률 ══
@@ -2870,9 +2965,9 @@ document.addEventListener('keydown',e=>{
 
 loadState();
 checkDayTransition();
-state.tasks.forEach(scheduleAlarm);
 _renderUserName();
 initFirebase();
+startHourlyAlarmCheck();
 updateHeader();
 switchTab('todo');
 checkRecurring();
