@@ -1,4 +1,7 @@
 {
+  "rewrites": [
+    { "source": "/", "destination": "/index_merged.html" }
+  ],
   "headers": [
     {
       "source": "/sw.js",
