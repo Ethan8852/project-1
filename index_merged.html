@@ -2808,64 +2808,117 @@ function _generateDayImage(dateStr,cb){
   done.forEach(t=>allItems.push({label:(t.starred?'⭐ ':'')+t.text,type:'done'}));
   missed.forEach(t=>allItems.push({label:t.text,type:'missed'}));
 
-  const W=750,PAD=44,ITEM_H=52,HDR_H=170,FTR_H=64;
-  const H=HDR_H+(allItems.length||1)*ITEM_H+FTR_H+PAD;
-  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
-  const c=cv.getContext('2d');
+  const S=2; // 레티나 2x
+  const W=750,HPAD=32,VPAD=20,ITEM_H=66,HDR_H=210,FTR_H=68;
+  const H=HDR_H+(allItems.length||1)*ITEM_H+VPAD+FTR_H;
+  const cv=document.createElement('canvas');cv.width=W*S;cv.height=H*S;
+  const c=cv.getContext('2d');c.scale(S,S);
 
   // 배경
   const bg=c.createLinearGradient(0,0,W,H);
-  bg.addColorStop(0,'#F5F2FF');bg.addColorStop(0.5,'#FEF2F7');bg.addColorStop(1,'#F2F7FF');
+  bg.addColorStop(0,'#EDE8FF');bg.addColorStop(0.5,'#FDE8F3');bg.addColorStop(1,'#E8F2FF');
   c.fillStyle=bg;c.fillRect(0,0,W,H);
 
-  // 헤더 카드
-  const hg=c.createLinearGradient(0,0,W,HDR_H);
-  hg.addColorStop(0,'#CDB4DB');hg.addColorStop(0.6,'#FFC8DD');hg.addColorStop(1,'#FFAFCC');
-  _roundRect(c,PAD/2,PAD/2,W-PAD,HDR_H-PAD/2,22,hg);
+  // 헤더 그라데이션 카드 (하단 둥글지 않게 — 아이템과 자연스럽게 이어지도록)
+  const hg=c.createLinearGradient(0,0,W*0.8,HDR_H);
+  hg.addColorStop(0,'#BFA3D4');hg.addColorStop(0.5,'#EAA8CB');hg.addColorStop(1,'#FFC2D4');
+  c.fillStyle=hg;
+  c.beginPath();c.moveTo(0,0);c.lineTo(W,0);c.lineTo(W,HDR_H);c.lineTo(0,HDR_H);c.closePath();c.fill();
+
+  // 헤더 우측 장식 원
+  c.fillStyle='rgba(255,255,255,0.10)';
+  c.beginPath();c.arc(W-40,30,130,0,Math.PI*2);c.fill();
+  c.beginPath();c.arc(W+20,HDR_H-20,90,0,Math.PI*2);c.fill();
 
   // 날짜
-  c.fillStyle='rgba(255,255,255,0.75)';c.font='600 22px -apple-system,sans-serif';
-  c.fillText(dateLabel,PAD+12,PAD+44);
+  c.fillStyle='rgba(255,255,255,0.80)';
+  c.font=`500 20px -apple-system,sans-serif`;
+  c.fillText(dateLabel,HPAD+8,54);
+
   // 이름
-  c.fillStyle='#fff';c.font='800 32px -apple-system,sans-serif';
-  c.fillText(`${userName}의 하루`,PAD+12,PAD+88);
+  c.fillStyle='#fff';
+  c.font=`800 46px -apple-system,sans-serif`;
+  c.shadowColor='rgba(120,60,160,0.18)';c.shadowBlur=12;c.shadowOffsetY=3;
+  c.fillText(`${userName}의 하루`,HPAD+8,116);
+  c.shadowBlur=0;c.shadowOffsetY=0;
+
   // 통계 뱃지
   const statText=`완료 ${done.length} · 할일 ${todo.length}`;
-  c.fillStyle='rgba(255,255,255,0.30)';_roundRect(c,PAD+12,PAD+104,180,32,10,null,true);
-  c.fillStyle='rgba(255,255,255,0.82)';c.font='600 14px -apple-system,sans-serif';
-  c.fillText(statText,PAD+24,PAD+124);
+  const bW=c.measureText(statText).width+36;
+  c.fillStyle='rgba(255,255,255,0.22)';_roundRect(c,HPAD+8,134,bW,38,19,null,true);
+  c.fillStyle='rgba(255,255,255,0.92)';c.font='600 16px -apple-system,sans-serif';
+  c.fillText(statText,HPAD+8+18,158);
+
+  // 아이템 영역 배경 (헤더 아래 흰 섹션)
+  const listY=HDR_H;const listH=H-HDR_H-FTR_H;
+  c.fillStyle='rgba(255,255,255,0.60)';
+  c.fillRect(0,listY,W,listH);
 
   // 아이템 목록
-  let y=HDR_H+8;
+  let y=listY+VPAD/2;
   if(allItems.length===0){
-    c.fillStyle='#C7C7CC';c.font='400 18px -apple-system,sans-serif';
-    c.textAlign='center';c.fillText('오늘의 기록이 없어요',W/2,y+30);c.textAlign='left';
+    c.fillStyle='#C7C7CC';c.font='400 20px -apple-system,sans-serif';
+    c.textAlign='center';c.fillText('오늘의 기록이 없어요',W/2,y+36);c.textAlign='left';
   }
   allItems.forEach(item=>{
-    // 카드 배경
-    c.fillStyle='rgba(255,255,255,0.88)';_roundRect(c,PAD/2,y,W-PAD,ITEM_H-6,14,null,true);
-    // 도트
-    const dotX=PAD+10,dotY=y+ITEM_H/2-9;
-    if(item.type==='todo'){c.fillStyle='#CDB4DB';}
-    else if(item.type==='done'){c.fillStyle='#A2D2FF';}
-    else{c.fillStyle='#FFAFCC';}
-    c.beginPath();c.arc(dotX,dotY+6,5,0,Math.PI*2);c.fill();
-    // 텍스트
-    c.fillStyle=item.type==='done'?'#AEAEB2':item.type==='missed'?'#FFAABB':'#1D1D1F';
-    c.font=(item.type==='done'?'400':'500')+' 18px -apple-system,sans-serif';
-    const maxW=W-PAD*2-30;
-    let txt=item.label;
-    if(c.measureText(txt).width>maxW){
-      while(c.measureText(txt+'…').width>maxW&&txt.length>0)txt=txt.slice(0,-1);
-      txt+='…';
+    const cardY=y+4,cardH=ITEM_H-8;
+    // 카드
+    c.fillStyle='rgba(255,255,255,0.92)';
+    _roundRect(c,HPAD,cardY,W-HPAD*2,cardH,16,null,true);
+
+    // 왼쪽 컬러 바
+    const barColor=item.type==='todo'?'#CDB4DB':item.type==='done'?'#A2D2FF':'#FFAFCC';
+    c.fillStyle=barColor;
+    c.fillRect(HPAD,cardY,5,cardH);
+    // 카드 좌상단 둥글게
+    c.fillStyle='rgba(255,255,255,0.92)';
+    c.fillRect(HPAD,cardY,12,6);
+    c.fillRect(HPAD,cardY+cardH-6,12,6);
+
+    // 아이콘
+    const iconX=HPAD+22,iconCY=cardY+cardH/2;
+    c.fillStyle=barColor;
+    if(item.type==='done'){
+      // 체크 원
+      c.beginPath();c.arc(iconX,iconCY,9,0,Math.PI*2);c.fill();
+      c.strokeStyle='#fff';c.lineWidth=2;c.lineCap='round';c.lineJoin='round';
+      c.beginPath();c.moveTo(iconX-4,iconCY);c.lineTo(iconX-1,iconCY+3);c.lineTo(iconX+5,iconCY-4);c.stroke();
+    }else if(item.type==='missed'){
+      c.beginPath();c.arc(iconX,iconCY,9,0,Math.PI*2);c.fill();
+      c.strokeStyle='#fff';c.lineWidth=2;c.lineCap='round';
+      c.beginPath();c.moveTo(iconX-4,iconCY-4);c.lineTo(iconX+4,iconCY+4);c.stroke();
+      c.beginPath();c.moveTo(iconX+4,iconCY-4);c.lineTo(iconX-4,iconCY+4);c.stroke();
+    }else{
+      c.beginPath();c.arc(iconX,iconCY,7,0,Math.PI*2);c.fill();
     }
-    c.fillText(txt,PAD+24,y+ITEM_H/2+5);
+
+    // 텍스트
+    const txtX=HPAD+42,txtY=cardY+cardH/2+7;
+    c.fillStyle=item.type==='done'?'#AEAEB2':item.type==='missed'?'#D08090':'#1D1D1F';
+    c.font=(item.type==='done'?'400':'500')+' 20px -apple-system,sans-serif';
+    const maxW=W-HPAD*2-58;
+    let txt=item.label;
+    while(c.measureText(txt).width>maxW&&txt.length>0)txt=txt.slice(0,-1);
+    if(txt!==item.label)txt=txt.slice(0,-1)+'…';
+    c.fillText(txt,txtX,txtY);
+
+    // 완료 취소선
+    if(item.type==='done'){
+      const tw=Math.min(c.measureText(txt).width,maxW);
+      c.strokeStyle='rgba(174,174,178,0.65)';c.lineWidth=1.5;
+      c.beginPath();c.moveTo(txtX,txtY-8);c.lineTo(txtX+tw,txtY-8);c.stroke();
+    }
     y+=ITEM_H;
   });
 
-  // 푸터
-  c.fillStyle='#C7C7CC';c.font='400 13px -apple-system,sans-serif';c.textAlign='center';
-  c.fillText('오늘하자제발  ·  project-six-nu-30.vercel.app',W/2,H-22);
+  // 푸터 구분선
+  const ftY=H-FTR_H;
+  c.strokeStyle='rgba(205,180,219,0.25)';c.lineWidth=1;
+  c.beginPath();c.moveTo(HPAD*2,ftY+8);c.lineTo(W-HPAD*2,ftY+8);c.stroke();
+
+  // 푸터 텍스트
+  c.fillStyle='#AEAEB2';c.font='400 14px -apple-system,sans-serif';c.textAlign='center';
+  c.fillText('오늘하자제발  ·  project-six-nu-30.vercel.app',W/2,ftY+40);
   cb(cv);
 }
 function _roundRect(c,x,y,w,h,r,fill,stroke){
