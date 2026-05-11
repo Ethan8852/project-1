@@ -63,6 +63,21 @@ export default function Landing() {
             📦
           </div>
 
+          {/* 캐치프레이즈 */}
+          <div style={{
+            display: 'inline-block',
+            background: 'var(--color-primary-light)',
+            color: 'var(--color-primary)',
+            borderRadius: 'var(--radius-full)',
+            padding: '5px 16px',
+            fontSize: 13,
+            fontWeight: 700,
+            marginBottom: 16,
+            letterSpacing: '-0.2px',
+          }}>
+            매번 주문하기 귀찮을 때 SubLink
+          </div>
+
           {/* 헤드라인 */}
           <h1 style={{
             fontSize: 30,

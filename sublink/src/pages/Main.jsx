@@ -58,6 +58,62 @@ function getYearMonth() {
   return `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+function getOffsetMonthInfo(monthOffset) {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + monthOffset)
+  const year  = d.getFullYear()
+  const month = d.getMonth()
+  return {
+    year,
+    monthIdx: month,
+    monthNum: month + 1,
+    yearMonthStr: `${year}_${String(month + 1).padStart(2, '0')}`,
+    daysInMonth: new Date(year, month + 1, 0).getDate(),
+    firstDow: new Date(year, month, 1).getDay(),
+  }
+}
+
+function CalNavBar({ monthOffset, setMonthOffset, monthNum, year }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      {monthOffset !== 0 ? (
+        <button
+          onClick={() => setMonthOffset(0)}
+          title="이번 달로 돌아가기"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 3,
+            background: 'var(--color-primary-light)', border: '1.5px solid var(--color-primary)',
+            borderRadius: 20, cursor: 'pointer', padding: '2px 8px 2px 6px',
+            fontSize: 11, color: 'var(--color-primary)', fontWeight: 700, lineHeight: 1.4,
+          }}>
+          <span style={{ fontSize: 13, lineHeight: 1 }}>↺</span> 현재
+        </button>
+      ) : (
+        <div style={{ width: 52 }} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0,
+        background: 'var(--color-bg-secondary, #f5f5f5)', borderRadius: 20, padding: '2px 2px' }}>
+        <button
+          onClick={() => setMonthOffset(o => Math.max(o - 1, -6))}
+          disabled={monthOffset <= -6}
+          style={{ background: 'none', border: 'none', cursor: monthOffset > -6 ? 'pointer' : 'default',
+            padding: '1px 7px', fontSize: 16, lineHeight: 1, color: 'var(--color-text)',
+            opacity: monthOffset <= -6 ? 0.2 : 0.7, borderRadius: 16 }}>‹</button>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text)', minWidth: 36, textAlign: 'center' }}>
+          {monthOffset !== 0 ? `${year}.${String(monthNum).padStart(2,'0')}` : `${monthNum}월`}
+        </span>
+        <button
+          onClick={() => setMonthOffset(o => Math.min(o + 1, 3))}
+          disabled={monthOffset >= 3}
+          style={{ background: 'none', border: 'none', cursor: monthOffset < 3 ? 'pointer' : 'default',
+            padding: '1px 7px', fontSize: 16, lineHeight: 1, color: 'var(--color-text)',
+            opacity: monthOffset >= 3 ? 0.2 : 0.7, borderRadius: 16 }}>›</button>
+      </div>
+    </div>
+  )
+}
+
 function periodLabel(value, customDate) {
   const p = PERIODS.find(p => p.value === value)
   if (p) return `매월 ${p.main}`
@@ -164,7 +220,7 @@ function SellerView({ user }) {
   const [expandedCustomerId, setExpandedCustomerId] = useState(null)
   const undoTimerRef = useRef(null)
 
-  useEffect(() => { fetchAll(); fetchDeliveries() }, [])
+  useEffect(() => { fetchAll(); fetchDeliveries(); fetchAllDeliveries() }, [])
   useEffect(() => { if (tab === 4) fetchCharges() }, [tab])
 
   // Tab 키 단축키: 수익 필터 순환
@@ -602,6 +658,7 @@ function SellerView({ user }) {
             expandedWeek={expandedWeek}
             currentWeek={currentWeek}
             onToggleWeek={week => setExpandedWeek(prev => prev === week ? null : week)}
+            allDeliveries={allDeliveries}
           />
 
           {/* 탭 카드 */}
@@ -1085,9 +1142,18 @@ function SellerView({ user }) {
 // ──────────────────────────────────────────────────────────
 //  판매자 배송 캘린더
 // ──────────────────────────────────────────────────────────
-function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggleWeek }) {
+function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggleWeek, allDeliveries = [] }) {
   const [expandedCustomDay, setExpandedCustomDay] = useState(null)
-  const month = new Date().getMonth() + 1
+  const [monthOffset, setMonthOffset] = useState(0)
+
+  const { year, monthNum, yearMonthStr } = getOffsetMonthInfo(monthOffset)
+  const isCurrentMonth = monthOffset === 0
+
+  const effectiveCompletedIds = isCurrentMonth
+    ? completedIds
+    : new Set(allDeliveries.filter(d => d.yearMonth === yearMonthStr).map(d => d.subId))
+
+  const effectiveCurrentWeek = isCurrentMonth ? currentWeek : null
 
   const grouped = { week1: [], week2: [], week3: [], week4: [] }
   const customByDay = {}
@@ -1102,7 +1168,7 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
   })
 
   const calItem = (sub) => {
-    const done = completedIds.has(sub.id)
+    const done = effectiveCompletedIds.has(sub.id)
     return (
       <div key={sub.id} className="sel-cal-item">
         <div className={`sel-cal-dot${done ? ' done' : sub.status === 'active' ? ' active' : ''}`} />
@@ -1127,14 +1193,16 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
   return (
     <div className="card" style={{ padding: 0, marginBottom: 14 }}>
       <div className="card-head">
-        <span style={{ fontSize: 13, fontWeight: 700 }}>이번 달 배송 캘린더</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{month}월</span>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          {isCurrentMonth ? '이번 달 배송 캘린더' : `${year}년 ${monthNum}월 배송 캘린더`}
+        </span>
+        <CalNavBar monthOffset={monthOffset} setMonthOffset={setMonthOffset} monthNum={monthNum} year={year} />
       </div>
       {['week1', 'week2', 'week3', 'week4'].map((week, idx) => {
         const weekSubs       = grouped[week]
         const isExpanded     = expandedWeek === week
-        const isCurrent      = week === currentWeek
-        const completedCount = weekSubs.filter(s => completedIds.has(s.id)).length
+        const isCurrent      = week === effectiveCurrentWeek
+        const completedCount = weekSubs.filter(s => effectiveCompletedIds.has(s.id)).length
 
         return (
           <div key={week} className={`sel-cal-week${isCurrent ? ' current' : ''}`}>
@@ -1145,7 +1213,7 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
                 <span className={`badge ${weekSubs.length > 0 ? 'badge-primary' : 'badge-muted'}`}>{weekSubs.length}건</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {isCurrent && weekSubs.length > 0 && (
+                {weekSubs.length > 0 && (
                   <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{completedCount}/{weekSubs.length} 완료</span>
                 )}
                 <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{isExpanded ? '▲' : '▼'}</span>
@@ -1162,7 +1230,7 @@ function SellerCalendar({ subs, completedIds, expandedWeek, currentWeek, onToggl
       {/* 특정일 */}
       {Object.entries(customByDay).sort(([a],[b]) => Number(a)-Number(b)).map(([day, daySubs]) => {
         const isExpanded     = expandedCustomDay === day
-        const completedCount = daySubs.filter(s => completedIds.has(s.id)).length
+        const completedCount = daySubs.filter(s => effectiveCompletedIds.has(s.id)).length
         return (
           <div key={day} className="sel-cal-week">
             <div className="sel-cal-head" onClick={() => setExpandedCustomDay(isExpanded ? null : day)}>
@@ -1794,15 +1862,14 @@ function CustomerView({ user, resetRef }) {
 //  고객 이번 달 캘린더
 // ──────────────────────────────────────────────────────────
 function CustomerMonthCalendar({ subs }) {
-  const now        = new Date()
-  const year       = now.getFullYear()
-  const monthIdx   = now.getMonth()
-  const monthLabel = `${monthIdx + 1}월`
-  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate()
-  const firstDow   = new Date(year, monthIdx, 1).getDay()
+  const [expandedWeek,  setExpandedWeek]  = useState(null)
+  const [expandedDay,   setExpandedDay]   = useState(null)
+  const [monthOffset,   setMonthOffset]   = useState(0)
 
-  const [expandedWeek, setExpandedWeek] = useState(null)
-  const [expandedDay,  setExpandedDay]  = useState(null)
+  const now = new Date()
+  const { year, monthIdx, monthNum, daysInMonth, firstDow } = getOffsetMonthInfo(monthOffset)
+  const isCurrentMonth = monthOffset === 0
+  const monthLabel = `${monthNum}월`
 
   const activeSubs = subs.filter(s => s.status !== 'cancelled')
 
@@ -1836,8 +1903,10 @@ function CustomerMonthCalendar({ subs }) {
   return (
     <div className="card" style={{ padding: 0, marginBottom: 14 }}>
       <div className="card-head">
-        <span style={{ fontSize: 13, fontWeight: 700 }}>📅 이번 달 달력</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{monthLabel}</span>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          {isCurrentMonth ? '📅 이번 달 달력' : `📅 ${year}년 ${monthNum}월 달력`}
+        </span>
+        <CalNavBar monthOffset={monthOffset} setMonthOffset={setMonthOffset} monthNum={monthNum} year={year} />
       </div>
       <div style={{ padding: '0 10px 14px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
@@ -1866,7 +1935,7 @@ function CustomerMonthCalendar({ subs }) {
               >
                 {row.map((day, ci) => {
                   const hasSub  = day && (rowSubs.length > 0 || (customByDay[day]?.length > 0))
-                  const isToday = day === now.getDate()
+                  const isToday = isCurrentMonth && day === now.getDate()
                   return (
                     <div key={ci} style={{
                       textAlign: 'center', padding: '5px 1px', borderRadius: 6,
@@ -1954,7 +2023,11 @@ const WEEK_LABELS = {
 }
 
 function DeliveryCalendar({ subs, onPause, onResume, onCancel }) {
-  const month = new Date().getMonth() + 1
+  const [monthOffset, setMonthOffset] = useState(0)
+
+  const { year, monthNum, yearMonthStr } = getOffsetMonthInfo(monthOffset)
+  const isCurrentMonth = monthOffset === 0
+  const isPastMonth    = monthOffset < 0
 
   const grouped = { week1: [], week2: [], week3: [], week4: [], custom: [] }
   subs.forEach(sub => {
@@ -1965,8 +2038,10 @@ function DeliveryCalendar({ subs, onPause, onResume, onCancel }) {
   return (
     <div className="card" style={{ padding: 0, marginBottom: 14 }}>
       <div className="card-head">
-        <span style={{ fontSize: 13, fontWeight: 700 }}>이번 달 배송 일정</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{month}월</span>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          {isCurrentMonth ? '이번 달 배송 일정' : `${year}년 ${monthNum}월 배송 일정`}
+        </span>
+        <CalNavBar monthOffset={monthOffset} setMonthOffset={setMonthOffset} monthNum={monthNum} year={year} />
       </div>
       <div>
         {Object.entries(WEEK_LABELS).map(([week, label]) => {
@@ -1992,14 +2067,16 @@ function DeliveryCalendar({ subs, onPause, onResume, onCancel }) {
                       <div className="cal-item-name">{sub.productName}{sub.qty > 1 ? ` ×${sub.qty}` : ''}</div>
                       <div className="cal-item-price">₩{(sub.totalPrice ?? sub.productPrice)?.toLocaleString()}</div>
                     </div>
-                    <div className="cal-item-actions">
-                      {sub.status === 'active' ? (
-                        <button className="cal-action-btn" onClick={() => onPause(sub)}>일시정지</button>
-                      ) : (
-                        <button className="cal-action-btn cal-action-resume" onClick={() => onResume(sub)}>재개</button>
-                      )}
-                      <button className="cal-action-btn cal-action-cancel" onClick={() => onCancel(sub)}>해지</button>
-                    </div>
+                    {!isPastMonth && (
+                      <div className="cal-item-actions">
+                        {sub.status === 'active' ? (
+                          <button className="cal-action-btn" onClick={() => onPause(sub)}>일시정지</button>
+                        ) : (
+                          <button className="cal-action-btn cal-action-resume" onClick={() => onResume(sub)}>재개</button>
+                        )}
+                        <button className="cal-action-btn cal-action-cancel" onClick={() => onCancel(sub)}>해지</button>
+                      </div>
+                    )}
                   </div>
                 ))
               }
@@ -2030,14 +2107,16 @@ function DeliveryCalendar({ subs, onPause, onResume, onCancel }) {
                       {day ? `매월 ${day}일` : sub.customDate} · ₩{(sub.totalPrice ?? sub.productPrice)?.toLocaleString()}
                     </div>
                   </div>
-                  <div className="cal-item-actions">
-                    {sub.status === 'active' ? (
-                      <button className="cal-action-btn" onClick={() => onPause(sub)}>일시정지</button>
-                    ) : (
-                      <button className="cal-action-btn cal-action-resume" onClick={() => onResume(sub)}>재개</button>
-                    )}
-                    <button className="cal-action-btn cal-action-cancel" onClick={() => onCancel(sub)}>해지</button>
-                  </div>
+                  {!isPastMonth && (
+                    <div className="cal-item-actions">
+                      {sub.status === 'active' ? (
+                        <button className="cal-action-btn" onClick={() => onPause(sub)}>일시정지</button>
+                      ) : (
+                        <button className="cal-action-btn cal-action-resume" onClick={() => onResume(sub)}>재개</button>
+                      )}
+                      <button className="cal-action-btn cal-action-cancel" onClick={() => onCancel(sub)}>해지</button>
+                    </div>
+                  )}
                 </div>
               )
             })}
