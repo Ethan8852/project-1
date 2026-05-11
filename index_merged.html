@@ -419,7 +419,7 @@
   .cal-chip.todo      { background:rgba(189,224,254,0.30); color:#5A90BE; }
   .cal-chip.future    { background:rgba(255,200,221,0.22); color:#C07090; }
   .cal-chip.long      { background:rgba(162,210,255,0.28); color:#4A80AE; font-style:italic; }
-  .cal-chip.long-done { background:rgba(205,180,219,0.28); color:#8A6BAE; font-style:italic; text-decoration:line-through; }
+  .cal-chip.long-done { background:rgba(205,180,219,0.28); color:#8A6BAE; font-style:italic; }
   .cal-more { font-size:9px; color:#C7C7CC; margin-top:2px; cursor:default; user-select:none; }
 
   .empty-state {
@@ -746,6 +746,17 @@
     transition:all 0.2s cubic-bezier(0.34,1.56,0.64,1); flex-shrink:0; align-self:center;
   }
   .done-del-btn:hover { opacity:1; transform:scale(1.18); }
+
+  /* ══ 장기업무 단계 노트 ══ */
+  .long-stage-notes { display:flex; gap:5px; padding:0 2px; margin-bottom:3px; }
+  .long-note-inp {
+    flex:1; font-size:10px; border:none; border-bottom:1px solid rgba(205,180,219,0.22);
+    background:transparent; color:var(--text-sub); padding:2px 4px;
+    outline:none; font-family:inherit; text-align:center; min-width:0;
+    transition:border-color 0.2s, color 0.2s; cursor:text;
+  }
+  .long-note-inp:focus { border-bottom-color:var(--primary); color:var(--text); }
+  .long-note-inp::placeholder { color:var(--text-mute); font-size:9px; }
 
   /* ══ 장기업무 단계 배지 ══ */
   .long-cur-stage {
@@ -1135,15 +1146,18 @@ function saveState(){
 }
 
 // ══ 날짜 전환 ══
+function _tsToDateStr(ts){const d=new Date(ts);return`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
 function checkDayTransition(){
   const today=todayStr();
+  if(state.lastDate===today)return; // 이미 최신
   if(state.lastDate&&state.lastDate!==today){
-    if(state.doneTasks.length>0){
-      state.log[state.lastDate]={
-        done:state.doneTasks.map(t=>({text:t.text,starred:t.starred})),
-        missed:[]
-      };
-    }
+    // 각 완료 항목을 실제 완료일 기준으로 로그에 기록
+    state.doneTasks.forEach(t=>{
+      const dateKey=t.doneAt?_tsToDateStr(t.doneAt):state.lastDate;
+      if(!state.log[dateKey])state.log[dateKey]={done:[],missed:[]};
+      if(!state.log[dateKey].done.some(e=>e.text===t.text))
+        state.log[dateKey].done.push({text:t.text,starred:t.starred});
+    });
     const missed=state.tasks.filter(t=>!t.done);
     const now=Date.now();
     state.tasks=missed.map(t=>({...t,registeredAt:now,done:false}));
@@ -1162,6 +1176,8 @@ function checkDayTransition(){
     }
   }
   state.lastDate=today;saveState();
+  render();renderLongTasks();updateProgress();
+  if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
 }
 
 // ══ 헤더 ══
@@ -1666,10 +1682,21 @@ function getDayData(dateStr){
     return t.startDate<=dateStr&&dateStr<=t.endDate;
   }).map(t=>({text:t.text,starred:t.starred,isLong:true,isDoneLong:true,id:t.id}));
   const allLong=[...activeLongs,...doneLongs];
-  if(dateStr===today)return{done:state.doneTasks.map(t=>({text:t.text,starred:t.starred})),missed:[],todo:state.tasks.map(t=>({text:t.text,starred:t.starred,id:t.id})),long:allLong};
+  if(dateStr===today){
+    // 완료일 기준: 오늘 완료된 것만 오늘에 표시
+    const todayDone=state.doneTasks.filter(t=>!t.doneAt||_tsToDateStr(t.doneAt)===today);
+    return{done:todayDone.map(t=>({text:t.text,starred:t.starred})),missed:[],todo:state.tasks.map(t=>({text:t.text,starred:t.starred,id:t.id})),long:allLong};
+  }
   if(dateStr>today){const f=state.futureTasks[dateStr]||[];const hasData=f.length>0||allLong.length>0;return hasData?{done:[],missed:[],todo:[],future:f,long:allLong}:null;}
+  // 과거: 로그 + 아직 전환 안 된 doneTasks(완료일이 해당 날짜인 것) 합산
   const log=state.log[dateStr];
-  if(log||allLong.length>0)return{done:(log&&log.done)||[],missed:(log&&log.missed)||[],todo:[],long:allLong};
+  const unlogged=state.doneTasks.filter(t=>t.doneAt&&_tsToDateStr(t.doneAt)===dateStr);
+  const logDone=(log&&log.done)||[];
+  const logMissed=(log&&log.missed)||[];
+  const unloggedMapped=unlogged.map(t=>({text:t.text,starred:t.starred})).filter(u=>!logDone.some(l=>l.text===u.text));
+  const allDone=[...logDone,...unloggedMapped];
+  if(allDone.length>0||logMissed.length>0||allLong.length>0)
+    return{done:allDone,missed:logMissed,todo:[],long:allLong};
   return null;
 }
 function renderCal(){
@@ -2015,16 +2042,17 @@ function printCal(){
 function checkRecurring(){
   if(!state.recurringTasks||state.recurringTasks.length===0)return;
   const today=todayStr();
-  if(state.recurringLastDate===today)return;
   const nowTs=Date.now();
+  let added=false;
   state.recurringTasks.forEach(rt=>{
     const exists=state.tasks.some(t=>t.text===rt.text)||state.doneTasks.some(t=>t.text===rt.text);
     if(!exists){
       const task={id:state.nextId++,text:rt.text,registeredAt:nowTs,done:false,starred:rt.starred||false,isRecurring:true};
-      state.tasks.push(task);scheduleAlarm(task);
+      state.tasks.push(task);scheduleAlarm(task);added=true;
     }
   });
-  state.recurringLastDate=today;saveState();render();
+  state.recurringLastDate=today;
+  if(added){saveState();render();}
 }
 function scheduleRecurringCheck(){
   const now=new Date();
@@ -2172,6 +2200,12 @@ function toggleLongStar(id){
   const t=(state.longTasks||[]).find(t=>t.id===id);if(!t)return;
   t.starred=!t.starred;saveState();renderLongTasks();
 }
+function updateLongStageNote(id,stageIdx,value){
+  const t=(state.longTasks||[]).find(t=>t.id===id);if(!t)return;
+  if(!t.stageNotes)t.stageNotes=['','',''];
+  t.stageNotes[stageIdx]=value;
+  saveState();
+}
 function renderLongTasks(){
   const container=document.getElementById('longTaskSection');
   if(!container)return;
@@ -2193,6 +2227,8 @@ function renderLongTasks(){
       ?`<input class="task-edit-input" id="longedit-${t.id}" value="${escapeHtml(t.text)}"
           onkeydown="handleLongEditKey(event,${t.id})" onblur="cancelLongEdit()" onclick="event.stopPropagation()">`
       :`<div class="task-text" onclick="startLongEdit(${t.id})" title="클릭: 제목 수정">${escapeHtml(t.text)}</div>`;
+    const notes=t.stageNotes||['','',''];
+    const stageNoteInputs=['시작','진행','마무리'].map((pl,i)=>`<input class="long-note-inp" placeholder="${pl}..." value="${escapeHtml(notes[i]||'')}" onchange="updateLongStageNote(${t.id},${i},this.value)" onclick="event.stopPropagation()" title="${pl} 단계 메모">`).join('');
     return`<div class="long-task-item${isPend?' long-pending':''}" id="longtask-${t.id}"
       draggable="true"
       ondragstart="onLongDragStart(event,${t.id})"
@@ -2217,6 +2253,7 @@ function renderLongTasks(){
           </svg>
         </button>
       </div>
+      <div class="long-stage-notes">${stageNoteInputs}</div>
       <div class="long-stage-bar">${steps}</div>
       <div class="long-stage-labels">${labels}</div>
     </div>`;
@@ -2416,7 +2453,7 @@ updateHeader();
 switchTab('todo');
 checkRecurring();
 scheduleRecurringCheck();
-setInterval(updateHeader,1000);
+setInterval(()=>{updateHeader();checkDayTransition();},1000);
 window.addEventListener('load',()=>{render();renderLongTasks();updateProgress();});
 </script>
 </body>
