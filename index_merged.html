@@ -10,6 +10,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="오늘하자">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
   /* ══ CSS 변수 ══ */
   :root {
@@ -75,8 +78,24 @@
   .clo-dot { font-size: 10px; font-weight: 700; color: var(--accent2); margin: 0 1px; align-self: center; }
   .c-logo-sub { font-size: 7px; letter-spacing: 2px; color: #C7C7CC; font-weight: 500; text-align: center; margin-top: 2px; }
 
-  .header-right { display: flex; justify-content: flex-end; }
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
   #clockLabel { font-size: 11px; color: #6E6E73; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.2px; user-select: none; white-space: nowrap; }
+  .auth-row { display: flex; align-items: center; gap: 5px; }
+  .auth-btn {
+    font-size: 10px; font-weight: 600; font-family: inherit;
+    border: none; border-radius: 10px; padding: 2px 8px; cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); white-space: nowrap;
+  }
+  .auth-btn.login  { background: rgba(162,210,255,0.20); color: #5A90BE; border: 0.5px solid rgba(162,210,255,0.40); }
+  .auth-btn.logout { background: rgba(205,180,219,0.18); color: #9B7BB4; border: 0.5px solid rgba(205,180,219,0.35); }
+  .auth-btn:hover  { transform: scale(1.06); filter: brightness(1.1); }
+  .auth-avatar { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; }
+  .sync-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: #34C759; box-shadow: 0 0 4px rgba(52,199,89,0.5);
+  }
+  .sync-dot.syncing { background: var(--accent2); animation: blink 0.7s ease-in-out infinite; }
+  .sync-dot.off { background: #C7C7CC; box-shadow: none; }
 
   /* ══ 탭 바 ══ */
   .tabs {
@@ -983,6 +1002,9 @@
 
   <div class="header-right">
     <span id="clockLabel"></span>
+    <div class="auth-row" id="authRow">
+      <button class="auth-btn login" onclick="signInWithGoogle()" id="loginBtn">G 로그인</button>
+    </div>
   </div>
 </header>
 
@@ -1132,6 +1154,90 @@ let calYear,calMonth;
 let currentModalDate=null;
 let modalEditInfo=null;
 
+// ══ Firebase ══
+let _db=null,_auth=null,currentUser=null,_saveDebounce=null;
+const FIREBASE_CONFIG={
+  apiKey:'AIzaSyBrARQuuYF3jYp4J3myWA-26Ya58uRz8Y4',
+  authDomain:'todotoday-b0b9a.firebaseapp.com',
+  projectId:'todotoday-b0b9a',
+  messagingSenderId:'971814444647',
+  appId:'1:971814444647:web:9cd620bff206b5622a3ec2'
+};
+function initFirebase(){
+  try{
+    if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
+    _auth=firebase.auth();
+    _db=firebase.firestore();
+    _auth.onAuthStateChanged(user=>{
+      currentUser=user;
+      updateAuthUI(user);
+      if(user)loadFromFirestore();
+    });
+  }catch(e){console.warn('Firebase init err:',e);}
+}
+function signInWithGoogle(){
+  if(!_auth)return;
+  const provider=new firebase.auth.GoogleAuthProvider();
+  _auth.signInWithPopup(provider).catch(e=>{
+    showToast('로그인 실패: '+e.message);
+  });
+}
+function signOut(){
+  if(!_auth)return;
+  _auth.signOut();
+  showToast('로그아웃됐어요.');
+}
+function updateAuthUI(user){
+  const row=document.getElementById('authRow');
+  if(!row)return;
+  if(user){
+    const avatar=user.photoURL?`<img class="auth-avatar" src="${user.photoURL}" referrerpolicy="no-referrer">`:'';
+    const name=escapeHtml(user.displayName||user.email||'');
+    row.innerHTML=`${avatar}<span style="font-size:10px;color:#6E6E73;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span><div class="sync-dot" id="syncDot" title="동기화됨"></div><button class="auth-btn logout" onclick="signOut()">로그아웃</button>`;
+  }else{
+    row.innerHTML=`<button class="auth-btn login" onclick="signInWithGoogle()" id="loginBtn">G 로그인</button>`;
+  }
+}
+function setSyncDot(status){
+  const dot=document.getElementById('syncDot');
+  if(!dot)return;
+  dot.className='sync-dot'+(status==='syncing'?' syncing':status==='off'?' off':'');
+  dot.title=status==='syncing'?'동기화 중…':status==='off'?'오프라인':'동기화됨';
+}
+async function loadFromFirestore(){
+  if(!currentUser||!_db)return;
+  try{
+    setSyncDot('syncing');
+    const ref=_db.doc(`users/${currentUser.uid}/state/data`);
+    const snap=await ref.get();
+    if(snap.exists){
+      const remote=snap.data();
+      if(!state.savedAt||remote.savedAt>state.savedAt){
+        Object.assign(state,remote);
+        try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
+        checkDayTransition();
+        render();renderLongTasks();updateProgress();
+        if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+        if(document.getElementById('panel-done').classList.contains('active'))renderDone();
+        showToast('☁️ 클라우드에서 데이터를 불러왔어요','success');
+      }
+    }else if(state.tasks.length>0||state.doneTasks.length>0||state.longTasks.length>0){
+      await saveToFirestore();
+      showToast('☁️ 기존 데이터를 클라우드에 백업했어요!','success');
+    }
+    setSyncDot('ok');
+  }catch(e){setSyncDot('off');console.warn('Firestore load err:',e);}
+}
+async function saveToFirestore(){
+  if(!currentUser||!_db)return;
+  try{
+    setSyncDot('syncing');
+    const ref=_db.doc(`users/${currentUser.uid}/state/data`);
+    await ref.set(JSON.parse(JSON.stringify(state)));
+    setSyncDot('ok');
+  }catch(e){setSyncDot('off');console.warn('Firestore save err:',e);}
+}
+
 function loadState(){
   try{
     const s=localStorage.getItem('ijma_v3');
@@ -1160,6 +1266,10 @@ function loadState(){
 function saveState(){
   state.savedAt=Math.max(state.savedAt||0,Date.now());
   try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
+  if(currentUser&&_db){
+    clearTimeout(_saveDebounce);
+    _saveDebounce=setTimeout(()=>saveToFirestore(),1000);
+  }
 }
 
 // ══ 날짜 전환 ══
@@ -2496,6 +2606,7 @@ document.addEventListener('keydown',e=>{
 loadState();
 checkDayTransition();
 state.tasks.forEach(scheduleAlarm);
+initFirebase();
 updateHeader();
 switchTab('todo');
 checkRecurring();
