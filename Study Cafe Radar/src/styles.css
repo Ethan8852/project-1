@@ -1,0 +1,124 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-navy: var(--navy);
+  --color-navy-foreground: var(--navy-foreground);
+  --color-teal: var(--teal);
+  --color-teal-foreground: var(--teal-foreground);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.99 0.005 220);
+  --foreground: oklch(0.18 0.04 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.04 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.04 250);
+  --primary: oklch(0.72 0.14 180);  /* teal #00BFA5 */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.01 220);
+  --secondary-foreground: oklch(0.22 0.05 250);
+  --muted: oklch(0.96 0.01 220);
+  --muted-foreground: oklch(0.5 0.02 250);
+  --accent: oklch(0.94 0.03 180);
+  --accent-foreground: oklch(0.22 0.05 250);
+  --destructive: oklch(0.6 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.72 0.14 180);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.16 60);
+  --warning-foreground: oklch(0.2 0.05 60);
+  --border: oklch(0.92 0.01 220);
+  --input: oklch(0.92 0.01 220);
+  --ring: oklch(0.72 0.14 180);
+  --navy: oklch(0.25 0.07 260);
+  --navy-foreground: oklch(1 0 0);
+  --teal: oklch(0.72 0.14 180);
+  --teal-foreground: oklch(1 0 0);
+  --chart-1: oklch(0.72 0.14 180);
+  --chart-2: oklch(0.6 0.02 250);
+  --chart-3: oklch(0.55 0.15 260);
+  --chart-4: oklch(0.75 0.16 60);
+  --chart-5: oklch(0.6 0.22 27);
+  --gradient-hero: linear-gradient(135deg, oklch(0.22 0.07 260), oklch(0.38 0.15 185));
+  --shadow-card: 0 1px 3px oklch(0.25 0.07 260 / 0.06), 0 1px 2px oklch(0.25 0.07 260 / 0.04);
+  --shadow-elevated: 0 10px 30px -10px oklch(0.25 0.07 260 / 0.18);
+}
+
+.dark {
+  --background: oklch(0.16 0.03 250);
+  --foreground: oklch(0.96 0.005 220);
+  --card: oklch(0.22 0.04 255);
+  --card-foreground: oklch(0.96 0.005 220);
+  --popover: oklch(0.22 0.04 255);
+  --popover-foreground: oklch(0.96 0.005 220);
+  --primary: oklch(0.72 0.14 180);
+  --primary-foreground: oklch(0.16 0.03 250);
+  --secondary: oklch(0.28 0.04 255);
+  --secondary-foreground: oklch(0.96 0.005 220);
+  --muted: oklch(0.28 0.04 255);
+  --muted-foreground: oklch(0.7 0.02 250);
+  --accent: oklch(0.28 0.04 255);
+  --accent-foreground: oklch(0.96 0.005 220);
+  --destructive: oklch(0.6 0.22 27);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.72 0.14 180);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.16 60);
+  --warning-foreground: oklch(0.2 0.05 60);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.72 0.14 180);
+  --navy: oklch(0.22 0.07 260);
+  --navy-foreground: oklch(1 0 0);
+  --teal: oklch(0.72 0.14 180);
+  --teal-foreground: oklch(1 0 0);
+}
+
+@layer utilities {
+  .bg-hero-gradient {
+    background: var(--gradient-hero);
+  }
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Pretendard", "Apple SD Gothic Neo", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}

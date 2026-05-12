@@ -1,0 +1,8 @@
+# 로컬 개발용 환경 변수 (이 파일을 .dev.vars 로 복사하여 사용)
+# .dev.vars 는 .gitignore 에 추가할 것
+
+JWT_SECRET=로컬개발용_랜덤_시크릿_32자이상
+
+# 네이버 개발자 센터 (https://developers.naver.com) 에서 발급
+NAVER_CLIENT_ID=발급받은_클라이언트_ID
+NAVER_CLIENT_SECRET=발급받은_클라이언트_시크릿

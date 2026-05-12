@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tanstack-start-app",
+  "compatibility_date": "2025-09-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/server.ts",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "studycafe-radar-db",
+      "database_id": "5adae28c-4de6-4671-a17b-4169ca7703d5",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
