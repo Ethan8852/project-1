@@ -876,6 +876,73 @@
   }
   .done-del-btn:hover { opacity:1; transform:scale(1.18); }
 
+  /* ══ 완료 히스토리 버튼 ══ */
+  .done-history-btn {
+    background: rgba(205,180,219,0.12); border: 0.5px solid rgba(205,180,219,0.28);
+    border-radius: 10px; cursor: pointer; font-size: 16px;
+    padding: 3px 10px; color: #9B7BB4; font-weight: 600;
+    transition: all 0.22s cubic-bezier(0.34,1.56,0.64,1); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: inherit;
+  }
+  .done-history-btn:hover { background: rgba(205,180,219,0.25); transform: scale(1.05); }
+  .done-history-btn span { font-size: 11px; font-weight: 600; letter-spacing: -0.1px; }
+
+  /* ══ 히스토리 오버레이 배너 ══ */
+  .history-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.28);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    z-index: 10000; display: flex; align-items: flex-end; justify-content: center;
+    animation: fadeIn 0.22s ease;
+  }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  .history-panel {
+    background: rgba(255,255,255,0.97);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border-radius: 24px 24px 0 0; width: 100%; max-width: 640px;
+    max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 -8px 48px rgba(150,100,200,0.18);
+    animation: slideUp 0.30s cubic-bezier(0.34,1.20,0.64,1);
+  }
+  @keyframes slideUp { from{transform:translateY(60px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .history-header {
+    padding: 18px 20px 12px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 0.5px solid rgba(205,180,219,0.20); flex-shrink: 0;
+  }
+  .history-title { font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -0.4px; }
+  .history-close-btn {
+    background: rgba(0,0,0,0.06); border: none; border-radius: 50%; width: 30px; height: 30px;
+    cursor: pointer; font-size: 15px; color: var(--text-sub);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.18s ease;
+  }
+  .history-close-btn:hover { background: rgba(0,0,0,0.10); }
+  .history-body { overflow-y: auto; padding: 10px 16px 24px; flex: 1; }
+  .history-date-group { margin-bottom: 16px; }
+  .history-date-label {
+    font-size: 12px; font-weight: 700; color: var(--text-sub);
+    letter-spacing: 0.2px; padding: 6px 4px 4px; text-transform: uppercase;
+    border-bottom: 0.5px solid rgba(205,180,219,0.18); margin-bottom: 6px;
+  }
+  .history-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 9px 8px; border-radius: 12px;
+    transition: background 0.15s;
+  }
+  .history-row:hover { background: rgba(205,180,219,0.08); }
+  .history-dot {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #fff; font-weight: 700;
+  }
+  .history-dot.regular { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+  .history-dot.long    { background: linear-gradient(135deg, #A2D2FF, #BDE0FE); }
+  .history-row-info { flex: 1; min-width: 0; }
+  .history-row-text { font-size: 14px; color: var(--text); line-height: 1.4; word-break: break-all; }
+  .history-row-text.done-style { color: #AEAEB2; text-decoration: line-through; }
+  .history-row-time { font-size: 11px; color: var(--text-mute); margin-top: 2px; }
+  .history-empty { text-align: center; padding: 40px 20px; color: var(--text-mute); font-size: 14px; }
+
   /* ══ 장기업무 단계 노트 ══ */
   .long-stage-notes { display:flex; gap:5px; padding:0 2px; margin-bottom:3px; }
   .long-note-inp {
@@ -1153,9 +1220,25 @@
 
 <!-- 완료 탭 -->
 <div class="tab-panel" id="panel-done">
-  <div class="section-label">완료한 일 <span class="sub">체크 아이콘으로 되돌리기</span></div>
+  <div class="section-label" style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>완료한 일 <span class="sub">체크 아이콘으로 되돌리기</span></div>
+    <button class="done-history-btn" onclick="showDoneHistory()" title="지나간 완료 목록 보기">
+      🗂 <span>지난 기록</span>
+    </button>
+  </div>
   <div class="task-list" id="doneList"></div>
   <div style="height:24px;"></div>
+</div>
+
+<!-- 완료 히스토리 배너 -->
+<div class="history-overlay" id="historyOverlay" style="display:none;" onclick="closeDoneHistory(event)">
+  <div class="history-panel" id="historyPanel">
+    <div class="history-header">
+      <div class="history-title">📋 완료 기록</div>
+      <button class="history-close-btn" onclick="closeDoneHistory()">✕</button>
+    </div>
+    <div class="history-body" id="historyBody"></div>
+  </div>
 </div>
 
 <!-- 캘린더 탭 -->
@@ -1869,7 +1952,9 @@ function cancelLongEdit(){if(!longEditingId)return;longEditingId=null;renderLong
 // ══ 완료 탭 렌더 ══
 function renderDone(){
   const list=document.getElementById('doneList');
-  const longDone=state.doneLongTasks||[];
+  const today=todayStr();
+  // 장기업무는 오늘 완료한 것만 표시
+  const longDone=(state.doneLongTasks||[]).filter(t=>t.doneAt&&_tsToDateStr(t.doneAt)===today);
   if(state.doneTasks.length===0&&longDone.length===0){
     list.innerHTML='<div class="empty-state">아직 완료한 일이 없어요</div>';return;
   }
@@ -1906,6 +1991,72 @@ function renderDone(){
       </button>
     </div>`).join('');
   list.innerHTML=regularHtml+longHtml;
+}
+
+// ══ 완료 히스토리 배너 ══
+function _formatHistoryTime(ts){
+  if(!ts)return'';
+  const d=new Date(ts);
+  const hh=d.getHours();const mm=String(d.getMinutes()).padStart(2,'0');
+  const ampm=hh<12?'오전':'오후';const h12=hh%12||12;
+  return`${ampm} ${h12}:${mm}`;
+}
+function _formatHistoryDate(dateStr){
+  const [y,m,d]=dateStr.split('-');
+  const dow=['일','월','화','수','목','금','토'][new Date(dateStr).getDay()];
+  return`${y}년 ${Number(m)}월 ${Number(d)}일 (${dow})`;
+}
+function showDoneHistory(){
+  const body=document.getElementById('historyBody');
+  // 날짜별 그룹 수집: {dateStr -> [{text, type:'regular'|'long', ts, starred}]}
+  const groups={};
+  const addItem=(dateStr,item)=>{
+    if(!groups[dateStr])groups[dateStr]=[];
+    groups[dateStr].push(item);
+  };
+  // 로그(이전 날짜 완료)
+  Object.entries(state.log||{}).forEach(([dateStr,log])=>{
+    (log.done||[]).forEach(t=>{
+      addItem(dateStr,{text:t.text,type:'regular',ts:null,starred:t.starred});
+    });
+  });
+  // 현재 doneTasks (오늘 완료, 아직 날짜 전환 전)
+  (state.doneTasks||[]).forEach(t=>{
+    const ds=t.doneAt?_tsToDateStr(t.doneAt):todayStr();
+    addItem(ds,{text:t.text,type:'regular',ts:t.doneAt||null,starred:t.starred});
+  });
+  // doneLongTasks (과거 포함 전체)
+  (state.doneLongTasks||[]).forEach(t=>{
+    const ds=t.doneAt?_tsToDateStr(t.doneAt):(t.endDate||todayStr());
+    addItem(ds,{text:t.text,type:'long',ts:t.doneAt||null,starred:t.starred,range:`${t.startDate||'?'} → ${t.endDate||'?'}`});
+  });
+  const dates=Object.keys(groups).sort((a,b)=>b.localeCompare(a)); // 최신순
+  if(dates.length===0){
+    body.innerHTML='<div class="history-empty">완료 기록이 없어요</div>';
+  }else{
+    body.innerHTML=dates.map(ds=>{
+      const items=groups[ds].sort((a,b)=>(b.ts||0)-(a.ts||0)); // 시간 최신순
+      const rows=items.map(item=>`
+        <div class="history-row">
+          <div class="history-dot ${item.type==='long'?'long':'regular'}">${item.type==='long'?'📌':'✓'}</div>
+          <div class="history-row-info">
+            <div class="history-row-text done-style">${escapeHtml(item.text)}${item.type==='long'?` <span style="font-size:9px;background:rgba(162,210,255,0.22);color:#5A90BE;padding:1px 6px;border-radius:10px;vertical-align:middle">장기</span>`:''}${item.starred?' ⭐':''}</div>
+            <div class="history-row-time">${item.ts?_formatHistoryTime(item.ts):''}${item.type==='long'&&item.range?` · 📅 ${item.range}`:''}</div>
+          </div>
+        </div>`).join('');
+      return`<div class="history-date-group">
+        <div class="history-date-label">${_formatHistoryDate(ds)}</div>
+        ${rows}
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('historyOverlay').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+function closeDoneHistory(e){
+  if(e&&e.type==='click'&&e.target!==document.getElementById('historyOverlay'))return;
+  document.getElementById('historyOverlay').style.display='none';
+  document.body.style.overflow='';
 }
 
 // ══ 1초 퍼징 완료 ══
@@ -3003,6 +3154,8 @@ function importData(e){
 // ══ 초기화 ══
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
+  const hist=document.getElementById('historyOverlay');
+  if(hist&&hist.style.display!=='none'){closeDoneHistory();return;}
   const lmgmt=document.getElementById('lmgmtModal');
   if(lmgmt&&lmgmt.classList.contains('active')){
     if(lmgmtEditInfo){cancelLmgmtEdit();}
