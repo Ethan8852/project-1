@@ -1,7 +1,8 @@
-import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Eye, EyeOff, Radar, ArrowLeft } from "lucide-react";
-import { login, register, getMe } from "@/api/auth";
+import { Radar, ArrowLeft } from "lucide-react";
+import { getMe } from "@/api/auth";
+import { processNaverOAuth, processGoogleOAuth, processKakaoOAuth, getOAuthConfig } from "@/api/oauth";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -10,300 +11,137 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "스터디카페 마케팅 모니터링 서비스에 로그인하세요." },
     ],
   }),
-  loader: async () => {
+  validateSearch: (search: Record<string, unknown>) => ({
+    code: typeof search.code === "string" ? search.code : undefined,
+    state: typeof search.state === "string" ? search.state : undefined,
+  }),
+  loader: async ({ location }) => {
     const me = await getMe().catch(() => null);
     if (me) throw redirect({ to: "/" });
+
+    const { code, state } = location.search as { code?: string; state?: string };
+    if (code && state) {
+      const provider = state.split("_")[0];
+      let oauthError: string | undefined;
+      try {
+        if (provider === "naver") await processNaverOAuth({ data: { code, state } });
+        else if (provider === "google") await processGoogleOAuth({ data: { code, state } });
+        else if (provider === "kakao") await processKakaoOAuth({ data: { code, state } });
+      } catch (err) {
+        oauthError = err instanceof Error ? err.message : "소셜 인증 실패";
+      }
+      if (!oauthError) throw redirect({ to: "/" });
+      const oauthConfig = await getOAuthConfig().catch(() => ({ naverClientId: "", googleClientId: "", kakaoClientId: "" }));
+      return { oauthError, oauthConfig };
+    }
+    const oauthConfig = await getOAuthConfig().catch(() => ({ naverClientId: "", googleClientId: "", kakaoClientId: "" }));
+    return { oauthError: undefined, oauthConfig };
   },
   component: AuthPage,
 });
 
 function AuthPage() {
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<"login" | "signup">("login");
-  const [showPw, setShowPw] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
-  const [forgotSent, setForgotSent] = useState(false);
-  const [loading, setLoading] = useState<null | "email" | "social">(null);
-  const [agreed, setAgreed] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { oauthError, oauthConfig } = Route.useLoaderData() ?? {};
+  const [error, setError] = useState<string | null>(oauthError ?? null);
+  const { naverClientId = "", googleClientId = "", kakaoClientId = "" } = oauthConfig ?? {};
 
-  const [form, setForm] = useState({ storeName: "", email: "", password: "", passwordConfirm: "" });
+  const startOAuth = (provider: "naver" | "google" | "kakao") => {
+    const state = `${provider}_${Math.random().toString(36).slice(2)}`;
+    const redirectUri = encodeURIComponent(`${window.location.origin}/auth`);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (tab === "signup") {
-      if (!agreed) return;
-      if (form.password !== form.passwordConfirm) {
-        setError("비밀번호가 일치하지 않습니다.");
-        return;
-      }
+    let url = "";
+    if (provider === "naver") {
+      if (!naverClientId) { setError("네이버 클라이언트 ID가 설정되지 않았습니다."); return; }
+      url = `https://nid.naver.com/oauth2.0/authorize?response_type=code&client_id=${naverClientId}&redirect_uri=${redirectUri}&state=${state}`;
+    } else if (provider === "google") {
+      if (!googleClientId) { setError("Google 클라이언트 ID가 설정되지 않았습니다. (준비중)"); return; }
+      url = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${googleClientId}&redirect_uri=${redirectUri}&scope=openid%20email%20profile&state=${state}`;
+    } else if (provider === "kakao") {
+      if (!kakaoClientId) { setError("카카오 클라이언트 ID가 설정되지 않았습니다. (준비중)"); return; }
+      url = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${kakaoClientId}&redirect_uri=${redirectUri}&state=${state}`;
     }
-
-    setLoading("email");
-    try {
-      if (tab === "login") {
-        await login({ data: { email: form.email, password: form.password } });
-      } else {
-        await register({ data: { email: form.email, password: form.password, storeName: form.storeName } });
-      }
-      navigate({ to: "/" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
-      setLoading(null);
-    }
+    window.location.href = url;
   };
 
   return (
     <div className="min-h-screen flex justify-center bg-muted/30">
-      <div className="relative w-full max-w-md min-h-screen bg-background flex flex-col">
+      <div className="relative w-full max-w-md min-h-screen bg-background flex flex-col shadow-[var(--shadow-elevated)]">
+
         {/* Hero */}
-        <div className="bg-hero-gradient text-white px-6 pt-12 pb-10 rounded-b-[2rem] text-center relative">
+        <div className="bg-hero-gradient text-white flex flex-col items-center justify-center px-6 pt-20 pb-16 text-center rounded-b-[2.5rem]">
           <Link to="/intro" className="absolute top-5 left-5 p-2 rounded-full bg-white/15 hover:bg-white/25 transition" aria-label="뒤로">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-white/15 backdrop-blur mb-3">
-            <Radar className="h-7 w-7" />
+          <div className="inline-flex items-center justify-center h-20 w-20 rounded-3xl bg-white/15 backdrop-blur mb-5 shadow-lg">
+            <Radar className="h-10 w-10" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight drop-shadow-sm">StudyCafe Radar</h1>
-          <p className="mt-1 text-sm opacity-90">스터디카페 마케팅 레이더</p>
+          <h1 className="text-3xl font-bold tracking-tight drop-shadow-sm">StudyCafe Radar</h1>
+          <p className="mt-2 text-sm opacity-90 leading-relaxed">스터디카페 마케팅을 레이더처럼<br />정확하게 모니터링하세요</p>
         </div>
 
-        <main className="flex-1 px-6 py-6 space-y-5">
-          {/* Tabs */}
-          <div className="grid grid-cols-2 rounded-xl bg-muted p-1">
-            {(["login", "signup"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => { setTab(t); setError(null); }}
-                className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${
-                  tab === t ? "bg-card shadow-[var(--shadow-card)] text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                {t === "login" ? "로그인" : "회원가입"}
-              </button>
-            ))}
-          </div>
+        <main className="flex-1 px-6 py-10 flex flex-col gap-4">
+          <p className="text-center text-sm font-medium text-muted-foreground">소셜 계정으로 빠르게 시작하세요</p>
 
           {error && (
-            <div className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+            <div className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive text-center">
               {error}
             </div>
           )}
 
-          <form onSubmit={submit} className="space-y-3">
-            {tab === "signup" && (
-              <Field label="매장명">
-                <input
-                  required
-                  name="storeName"
-                  maxLength={30}
-                  placeholder="예: 집중스터디카페 강남점"
-                  className={inputCls}
-                  value={form.storeName}
-                  onChange={handleChange}
-                />
-              </Field>
-            )}
-            <Field label="이메일">
-              <input
-                required
-                name="email"
-                type="email"
-                placeholder="owner@studycafe.kr"
-                className={inputCls}
-                value={form.email}
-                onChange={handleChange}
-              />
-            </Field>
-            <Field label={tab === "signup" ? "비밀번호 (8자 이상)" : "비밀번호"}>
-              <div className="relative">
-                <input
-                  required
-                  name="password"
-                  type={showPw ? "text" : "password"}
-                  minLength={tab === "signup" ? 8 : undefined}
-                  placeholder="비밀번호 입력"
-                  className={inputCls + " pr-10"}
-                  value={form.password}
-                  onChange={handleChange}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  aria-label="비밀번호 표시"
-                >
-                  {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </Field>
-            {tab === "signup" && (
-              <Field label="비밀번호 확인">
-                <input
-                  required
-                  name="passwordConfirm"
-                  type="password"
-                  placeholder="비밀번호 재입력"
-                  className={inputCls}
-                  value={form.passwordConfirm}
-                  onChange={handleChange}
-                />
-              </Field>
-            )}
+          {/* 네이버 — 주력 */}
+          <button
+            onClick={() => startOAuth("naver")}
+            className="w-full rounded-2xl py-4 text-[15px] font-bold text-white flex items-center justify-center gap-3 shadow-[0_8px_24px_-8px_#03C75A88] hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0 transition"
+            style={{ background: "#03C75A" }}
+          >
+            <span className="text-xl font-black leading-none">N</span>
+            네이버로 시작하기
+          </button>
 
-            {tab === "login" && (
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowForgot((s) => !s)}
-                  className="text-xs text-muted-foreground hover:text-primary"
-                >
-                  비밀번호 찾기 →
-                </button>
-              </div>
-            )}
+          {/* 구글 */}
+          <button
+            onClick={() => startOAuth("google")}
+            className="w-full rounded-2xl py-4 text-[15px] font-semibold flex items-center justify-center gap-3 border border-border bg-card hover:bg-muted hover:-translate-y-0.5 active:translate-y-0 transition shadow-[var(--shadow-card)]"
+          >
+            <GoogleIcon />
+            Google로 시작하기
+          </button>
 
-            {tab === "login" && showForgot && (
-              <div className="rounded-xl bg-muted/50 border border-border p-3 space-y-2">
-                {forgotSent ? (
-                  <p className="text-xs text-primary font-medium">✓ 재설정 링크를 발송했습니다.</p>
-                ) : (
-                  <>
-                    <p className="text-[11px] text-muted-foreground">
-                      가입한 이메일을 입력하면 재설정 링크를 보내드립니다.
-                    </p>
-                    <div className="flex gap-2">
-                      <input type="email" placeholder="가입 이메일" className={inputCls + " flex-1"} />
-                      <button
-                        type="button"
-                        onClick={() => setForgotSent(true)}
-                        className="rounded-lg bg-foreground text-background px-3 text-xs font-medium"
-                      >
-                        발송
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {tab === "signup" && (
-              <label className="flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-0.5 accent-primary"
-                />
-                <span className="text-muted-foreground">
-                  서비스 이용약관 및 개인정보처리방침에 동의합니다 (필수){" "}
-                  <button type="button" onClick={() => setShowTerms(true)} className="text-primary underline">
-                    약관 보기
-                  </button>
-                </span>
-              </label>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading !== null || (tab === "signup" && !agreed)}
-              className="w-full rounded-xl bg-primary text-primary-foreground py-3.5 text-sm font-semibold shadow-[0_8px_24px_-8px_var(--teal)] disabled:opacity-40 disabled:cursor-not-allowed transition hover:translate-y-[-1px]"
-            >
-              {loading === "email" ? "처리 중..." : tab === "login" ? "로그인" : "시작하기"}
-            </button>
-          </form>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <div className="flex-1 h-px bg-border" />
-            또는
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* 소셜 로그인 */}
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setLoading("social")}
-              className="w-full rounded-xl py-3 text-sm font-semibold text-white inline-flex items-center justify-center gap-2 hover:opacity-90 transition"
-              style={{ background: "#03C75A" }}
-            >
-              <span className="font-black">N</span> 네이버로 시작하기
-            </button>
-            <button
-              type="button"
-              onClick={() => setLoading("social")}
-              className="w-full rounded-xl py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 border border-border bg-card hover:bg-muted transition"
-            >
-              <span className="font-bold text-[#4285F4]">G</span> Google로 시작하기
-            </button>
-            <button
-              type="button"
-              onClick={() => setLoading("social")}
-              className="w-full rounded-xl py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 hover:opacity-90 transition"
-              style={{ background: "#FEE500", color: "#181600" }}
-            >
-              <span className="font-black">K</span> 카카오로 시작하기
-            </button>
-          </div>
+          {/* 카카오 */}
+          <button
+            onClick={() => startOAuth("kakao")}
+            className="w-full rounded-2xl py-4 text-[15px] font-bold flex items-center justify-center gap-3 hover:opacity-90 hover:-translate-y-0.5 active:translate-y-0 transition shadow-[0_8px_24px_-8px_#FEE50088]"
+            style={{ background: "#FEE500", color: "#181600" }}
+          >
+            <KakaoIcon />
+            카카오로 시작하기
+          </button>
         </main>
 
-        <footer className="px-6 py-4 text-center text-[10px] text-muted-foreground">
-          v1.0.0 · StudyCafe Radar · © 2026 All rights reserved
+        <footer className="px-6 pb-10 text-center text-[10px] text-muted-foreground space-y-1">
+          <p>계속하면 <span className="underline cursor-pointer">이용약관</span> 및 <span className="underline cursor-pointer">개인정보처리방침</span>에 동의하게 됩니다.</p>
+          <p>v1.0.0 · StudyCafe Radar · © 2026</p>
         </footer>
-
-        {/* Loading overlay */}
-        {loading === "social" && (
-          <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-            <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-            <p className="text-sm text-muted-foreground">인증 중입니다...</p>
-          </div>
-        )}
-
-        {/* Terms modal */}
-        {showTerms && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setShowTerms(false)}>
-            <div className="absolute inset-0 bg-black/50" />
-            <div
-              className="relative w-full max-w-md bg-card rounded-t-3xl p-6 max-h-[70vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-base font-semibold mb-3">서비스 이용약관</h3>
-              <div className="text-xs text-muted-foreground space-y-2 leading-relaxed">
-                <p>제1조 (목적) 본 약관은 StudyCafe Radar(이하 "서비스")가 제공하는 마케팅 모니터링 서비스의 이용 조건 및 절차를 규정함을 목적으로 합니다.</p>
-                <p>제2조 (개인정보) 회원의 매장 정보 및 마케팅 데이터는 분석 목적으로만 사용되며, 제3자에게 제공되지 않습니다.</p>
-                <p>제3조 (서비스 제공) 본 서비스는 KPI 데이터를 직접 입력하여 관리하는 방식으로 운영됩니다.</p>
-              </div>
-              <button
-                onClick={() => setShowTerms(false)}
-                className="mt-4 w-full rounded-xl bg-foreground text-background py-2.5 text-sm font-semibold"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-const inputCls =
-  "w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function GoogleIcon() {
   return (
-    <label className="block">
-      <span className="text-xs font-medium text-muted-foreground mb-1 block">{label}</span>
-      {children}
-    </label>
+    <svg width="18" height="18" viewBox="0 0 48 48">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+  );
+}
+
+function KakaoIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path fill="#181600" d="M12 3C6.477 3 2 6.477 2 10.8c0 2.7 1.636 5.077 4.133 6.488L5.1 21l4.688-2.977C10.479 18.34 11.227 18.4 12 18.4c5.523 0 10-3.477 10-7.6S17.523 3 12 3z"/>
+    </svg>
   );
 }
