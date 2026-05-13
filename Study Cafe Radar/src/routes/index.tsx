@@ -1,13 +1,13 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell,
 } from "recharts";
-import { Bell, TrendingUp, TrendingDown, Star, Users, Search, ArrowRight, X } from "lucide-react";
+import { Bell, TrendingUp, TrendingDown, Star, Users, Search, ArrowRight, X, LogOut } from "lucide-react";
 import { MobileShell } from "@/components/MobileShell";
 import { competitor, notifications, daily30 } from "@/lib/mock-data";
 import { getLatestKpi, getKpiHistory } from "@/api/kpi";
-import { getMe } from "@/api/auth";
+import { getMe, logout } from "@/api/auth";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -59,6 +59,7 @@ function KpiCard({
 function Dashboard() {
   const { me, latestKpi, history } = Route.useLoaderData();
   const [showNotif, setShowNotif] = useState(false);
+  const navigate = useNavigate();
 
   // DB 데이터가 있으면 사용, 없으면 mock fallback
   const kpi = latestKpi
@@ -89,16 +90,25 @@ function Dashboard() {
       <header className="sticky top-0 z-30 bg-hero-gradient text-white px-5 pt-5 pb-6 rounded-b-3xl">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs font-bold tracking-widest">STUDYCAFE RADAR</div>
-          <button
-            onClick={() => setShowNotif(true)}
-            className="relative rounded-full bg-white/15 p-2 hover:bg-white/25 transition"
-            aria-label="알림"
-          >
-            <Bell className="h-4 w-4" />
-            <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-[10px] font-bold flex items-center justify-center">
-              {notifications.length}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNotif(true)}
+              className="relative rounded-full bg-white/15 p-2 hover:bg-white/25 transition"
+              aria-label="알림"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-destructive text-[10px] font-bold flex items-center justify-center">
+                {notifications.length}
+              </span>
+            </button>
+            <button
+              onClick={async () => { await logout(); navigate({ to: "/auth" }); }}
+              className="rounded-full bg-white/15 p-2 hover:bg-white/25 transition"
+              aria-label="로그아웃"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <h1 className="text-xl font-bold leading-tight drop-shadow-sm">{storeName}</h1>
         <div className="mt-1 flex items-center gap-2 text-xs opacity-90">
