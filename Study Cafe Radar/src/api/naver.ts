@@ -75,6 +75,47 @@ export const getCompetitorInfo = createServerFn({ method: "GET" })
     return { competitorCount: Math.min(json.total, 20), estimatedRank, area };
   });
 
+function parsePlaceId(url: string): string | null {
+  const match = url.match(/(?:place\/|entry\/place\/)(\d+)/);
+  return match ? match[1] : null;
+}
+
+export const connectNaverPlace = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ url: z.string() }))
+  .handler(async ({ data }) => {
+    const { getDB } = await import("../runtime/context");
+    const { requireUserId } = await import("./auth");
+
+    const placeId = parsePlaceId(data.url);
+    if (!placeId) throw new Error("URL에서 플레이스 ID를 찾을 수 없습니다.\n예: https://map.naver.com/v5/entry/place/1234567890");
+
+    let name = "";
+    let address = "";
+    let reviewCount: number | null = null;
+    let avgRating: number | null = null;
+
+    const res = await fetch(
+      `https://map.naver.com/v5/api/sites/summary/${placeId}?lang=ko`,
+      { headers: { Referer: "https://map.naver.com/", "User-Agent": "Mozilla/5.0 (compatible)" } },
+    );
+    if (res.ok) {
+      const json = (await res.json()) as Record<string, unknown>;
+      const s = json.summary as Record<string, unknown> | undefined;
+      name = String(s?.name ?? s?.title ?? "");
+      address = String(s?.roadAddress ?? s?.address ?? s?.fullAddress ?? "");
+      reviewCount = (s?.reviewCount ?? null) as number | null;
+      avgRating = ((s?.starScore ?? s?.avgScore ?? s?.rating) ?? null) as number | null;
+    }
+
+    const userId = await requireUserId();
+    await getDB()
+      .prepare("UPDATE users SET naver_place_id = ?, naver_place_url = ?, naver_address = ? WHERE id = ?")
+      .bind(placeId, data.url, address, userId)
+      .run();
+
+    return { placeId, name, address, reviewCount, avgRating };
+  });
+
 export const getPlaceStats = createServerFn({ method: "GET" }).handler(async () => {
   const { getDB } = await import("../runtime/context");
   const { requireUserId } = await import("./auth");

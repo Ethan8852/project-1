@@ -1,13 +1,14 @@
-import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell,
 } from "recharts";
-import { Bell, TrendingUp, TrendingDown, Star, Users, Search, ArrowRight, X, LogOut } from "lucide-react";
+import { Bell, TrendingUp, TrendingDown, Star, Users, Search, ArrowRight, X, LogOut, MapPin, CheckCircle2 } from "lucide-react";
 import { MobileShell } from "@/components/MobileShell";
 import { competitor, notifications, daily30 } from "@/lib/mock-data";
 import { getLatestKpi, getKpiHistory } from "@/api/kpi";
 import { getMe, logout } from "@/api/auth";
+import { connectNaverPlace } from "@/api/naver";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,6 +28,70 @@ export const Route = createFileRoute("/")({
   },
   component: Dashboard,
 });
+
+function PlaceConnectCard({ onConnected }: { onConnected: () => void }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ name: string; address: string } | null>(null);
+
+  const handleConnect = async () => {
+    if (!url.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const info = await connectNaverPlace({ data: { url: url.trim() } });
+      setResult({ name: info.name || "연동 완료", address: info.address });
+      onConnected();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "연동 실패");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (result) {
+    return (
+      <div className="rounded-2xl bg-primary/5 border border-primary/20 px-4 py-3 flex items-center gap-3">
+        <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-primary">플레이스 연동 완료</div>
+          {result.name && <div className="text-xs text-muted-foreground truncate">{result.name}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)] space-y-3">
+      <div className="flex items-center gap-2">
+        <MapPin className="h-4 w-4 text-primary" />
+        <span className="text-sm font-semibold">네이버 플레이스 연동</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
+        네이버 지도에서 내 매장 페이지를 열고 URL을 붙여넣으세요.<br />
+        리뷰·평점·경쟁사 자동 수집이 활성화됩니다.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="url"
+          placeholder="https://map.naver.com/v5/entry/place/..."
+          value={url}
+          onChange={(e) => { setUrl(e.target.value); setError(null); }}
+          className="flex-1 min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <button
+          onClick={handleConnect}
+          disabled={loading || !url.trim()}
+          className="rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition flex-shrink-0"
+        >
+          {loading ? "연동 중…" : "연동"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 function KpiCard({
   label, value, sub, trend, icon,
@@ -60,6 +125,7 @@ function Dashboard() {
   const { me, latestKpi, history } = Route.useLoaderData();
   const [showNotif, setShowNotif] = useState(false);
   const navigate = useNavigate();
+  const router = useRouter();
 
   // DB 데이터가 있으면 사용, 없으면 mock fallback
   const kpi = latestKpi
@@ -123,6 +189,11 @@ function Dashboard() {
       </header>
 
       <main className="px-5 pt-5 space-y-6">
+        {/* 플레이스 미연동 시 연동 카드 */}
+        {!me.naverPlaceId && (
+          <PlaceConnectCard onConnected={() => router.invalidate()} />
+        )}
+
         {/* KPI 없을 때 안내 */}
         {!kpi ? (
           <Link
