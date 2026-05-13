@@ -87,7 +87,7 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
 
   const handleAutoFetch = async () => {
     const address = me?.naverAddress;
-    if (!address) { setAutoError("네이버 플레이스가 연동되지 않았습니다. 설정에서 먼저 연동해 주세요."); return; }
+    if (!address) { setAutoError("네이버 플레이스가 연동되지 않았습니다. 대시보드에서 먼저 연동해 주세요."); return; }
     setAutoFetching(true);
     setAutoError(null);
     try {
@@ -95,13 +95,33 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
         getPlaceStats().catch(() => ({ reviewCount: null, avgRating: null })),
         getCompetitorInfo({ data: { address } }).catch(() => null),
       ]);
-      setForm((prev) => ({
-        ...prev,
-        ...(stats.reviewCount !== null ? { reviewCount: String(stats.reviewCount) } : {}),
-        ...(stats.avgRating !== null ? { avgRating: String(stats.avgRating) } : {}),
-        ...(info?.competitorCount !== undefined ? { competitorCount: String(info.competitorCount) } : {}),
-        ...(info?.estimatedRank ? { searchRank: String(info.estimatedRank) } : {}),
-      }));
+
+      setForm((prev) => {
+        const next = { ...prev };
+
+        // 내 매장: 리뷰수·평점
+        if (stats.reviewCount !== null) next.reviewCount = String(stats.reviewCount);
+        if (stats.avgRating !== null) next.avgRating = String(stats.avgRating);
+
+        // 경쟁사: 수·추정순위
+        if (info?.competitorCount !== undefined) next.competitorCount = String(info.competitorCount);
+        if (info?.estimatedRank) next.searchRank = String(info.estimatedRank);
+
+        // 경쟁사 평균 유입 역추산
+        // 건강도 점수 = 리뷰수 × 평점 (proxy)
+        // competitorAvgInflow = myInflow × (avgCompetitorHealth / myHealth)
+        const myInflow = parseInt(prev.weeklyInflow);
+        const myReview = parseFloat(prev.reviewCount || String(stats.reviewCount ?? "0"));
+        const myRating = parseFloat(prev.avgRating || String(stats.avgRating ?? "0"));
+        const myHealth = myReview * myRating;
+
+        if (info?.avgHealthScore && myHealth > 0 && myInflow > 0) {
+          const estimated = Math.round(myInflow * (info.avgHealthScore / myHealth));
+          next.areaAvgInflow = String(estimated);
+        }
+
+        return next;
+      });
     } catch (err) {
       setAutoError(err instanceof Error ? err.message : "자동 조회 실패");
     } finally {
