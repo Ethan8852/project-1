@@ -6,7 +6,7 @@ import { MobileShell } from "@/components/MobileShell";
 import { health, improvements, monthly6, projects, abTests, channels } from "@/lib/mock-data";
 import { saveKpi, getLatestKpi } from "@/api/kpi";
 import { getMe } from "@/api/auth";
-import { getCompetitorInfo } from "@/api/naver";
+import { getCompetitorInfo, getPlaceStats } from "@/api/naver";
 
 type Search = { section?: "ab" };
 
@@ -87,15 +87,20 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
 
   const handleAutoFetch = async () => {
     const address = me?.naverAddress;
-    if (!address) { setAutoError("매장 주소가 없습니다. 설정에서 네이버 플레이스를 연동해 주세요."); return; }
+    if (!address) { setAutoError("네이버 플레이스가 연동되지 않았습니다. 설정에서 먼저 연동해 주세요."); return; }
     setAutoFetching(true);
     setAutoError(null);
     try {
-      const info = await getCompetitorInfo({ data: { address } });
+      const [stats, info] = await Promise.all([
+        getPlaceStats().catch(() => ({ reviewCount: null, avgRating: null })),
+        getCompetitorInfo({ data: { address } }).catch(() => null),
+      ]);
       setForm((prev) => ({
         ...prev,
-        competitorCount: String(info.competitorCount),
-        ...(info.estimatedRank ? { searchRank: String(info.estimatedRank) } : {}),
+        ...(stats.reviewCount !== null ? { reviewCount: String(stats.reviewCount) } : {}),
+        ...(stats.avgRating !== null ? { avgRating: String(stats.avgRating) } : {}),
+        ...(info?.competitorCount !== undefined ? { competitorCount: String(info.competitorCount) } : {}),
+        ...(info?.estimatedRank ? { searchRank: String(info.estimatedRank) } : {}),
       }));
     } catch (err) {
       setAutoError(err instanceof Error ? err.message : "자동 조회 실패");
@@ -138,19 +143,17 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold">Smart Place KPI 입력</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">네이버 스마트플레이스 대시보드 수치를 입력하세요</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">리뷰·평점·경쟁사는 자동 수집, 유입량은 직접 입력</p>
         </div>
-        {me?.naverAddress && (
-          <button
-            type="button"
-            onClick={handleAutoFetch}
-            disabled={autoFetching}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-[11px] font-semibold hover:bg-muted transition disabled:opacity-60"
-          >
-            <RefreshCw className={`h-3 w-3 ${autoFetching ? "animate-spin" : ""}`} />
-            경쟁사 자동조회
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleAutoFetch}
+          disabled={autoFetching}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-[11px] font-semibold hover:bg-muted transition disabled:opacity-60 flex-shrink-0"
+        >
+          <RefreshCw className={`h-3 w-3 ${autoFetching ? "animate-spin" : ""}`} />
+          {autoFetching ? "수집 중…" : "자동 수집"}
+        </button>
       </div>
 
       {autoError && <p className="text-xs text-destructive">{autoError}</p>}
@@ -164,9 +167,12 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
 
         {/* 유입 & 순위 */}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground">이번주 유입 (명)</label>
-            <input type="number" min={0} placeholder="예: 1200" value={form.weeklyInflow} onChange={set("weeklyInflow")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          <div className="col-span-2">
+            <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              이번주 유입 (명)
+              <span className="rounded bg-orange-100 text-orange-700 px-1.5 py-0.5 text-[10px] font-semibold">Smart Place에서 직접 확인</span>
+            </label>
+            <input type="number" min={0} placeholder="Smart Place 대시보드 → 통계 → 이번주 유입" value={form.weeklyInflow} onChange={set("weeklyInflow")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <div>
             <label className="text-[11px] font-medium text-muted-foreground">검색 순위 (위)</label>

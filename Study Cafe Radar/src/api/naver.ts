@@ -75,6 +75,33 @@ export const getCompetitorInfo = createServerFn({ method: "GET" })
     return { competitorCount: Math.min(json.total, 20), estimatedRank, area };
   });
 
+export const getPlaceStats = createServerFn({ method: "GET" }).handler(async () => {
+  const { getDB } = await import("../runtime/context");
+  const { requireUserId } = await import("./auth");
+  const userId = await requireUserId();
+
+  const user = await getDB()
+    .prepare("SELECT naver_place_id FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ naver_place_id: string | null }>();
+
+  const placeId = user?.naver_place_id;
+  if (!placeId) return { reviewCount: null, avgRating: null };
+
+  const res = await fetch(
+    `https://map.naver.com/v5/api/sites/summary/${placeId}?lang=ko`,
+    { headers: { Referer: "https://map.naver.com/", "User-Agent": "Mozilla/5.0 (compatible)" } },
+  );
+  if (!res.ok) return { reviewCount: null, avgRating: null };
+
+  const data = (await res.json()) as Record<string, unknown>;
+  const summary = data.summary as Record<string, unknown> | undefined;
+  return {
+    reviewCount: (summary?.reviewCount ?? null) as number | null,
+    avgRating: ((summary?.starScore ?? summary?.avgScore ?? summary?.rating) ?? null) as number | null,
+  };
+});
+
 export const linkNaverPlace = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
