@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell,
@@ -17,8 +17,9 @@ export const Route = createFileRoute("/")({
     ],
   }),
   loader: async () => {
-    const [me, latestKpi, history] = await Promise.all([
-      getMe(),
+    const me = await getMe().catch(() => null);
+    if (!me) throw redirect({ to: "/intro" });
+    const [latestKpi, history] = await Promise.all([
       getLatestKpi().catch(() => null),
       getKpiHistory({ data: { days: 30 } }).catch(() => []),
     ]);

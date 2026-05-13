@@ -1,7 +1,7 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Eye, EyeOff, Radar } from "lucide-react";
-import { login, register } from "@/api/auth";
+import { Eye, EyeOff, Radar, ArrowLeft } from "lucide-react";
+import { login, register, getMe } from "@/api/auth";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -10,6 +10,10 @@ export const Route = createFileRoute("/auth")({
       { name: "description", content: "스터디카페 마케팅 모니터링 서비스에 로그인하세요." },
     ],
   }),
+  loader: async () => {
+    const me = await getMe().catch(() => null);
+    if (me) throw redirect({ to: "/" });
+  },
   component: AuthPage,
 });
 
@@ -61,7 +65,10 @@ function AuthPage() {
     <div className="min-h-screen flex justify-center bg-muted/30">
       <div className="relative w-full max-w-md min-h-screen bg-background flex flex-col">
         {/* Hero */}
-        <div className="bg-hero-gradient text-white px-6 pt-12 pb-10 rounded-b-[2rem] text-center">
+        <div className="bg-hero-gradient text-white px-6 pt-12 pb-10 rounded-b-[2rem] text-center relative">
+          <Link to="/intro" className="absolute top-5 left-5 p-2 rounded-full bg-white/15 hover:bg-white/25 transition" aria-label="뒤로">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
           <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-white/15 backdrop-blur mb-3">
             <Radar className="h-7 w-7" />
           </div>
