@@ -220,6 +220,40 @@ function AuthPage() {
               {loading === "email" ? "처리 중..." : tab === "login" ? "로그인" : "시작하기"}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <div className="flex-1 h-px bg-border" />
+            또는
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          {/* 소셜 로그인 */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setLoading("social")}
+              className="w-full rounded-xl py-3 text-sm font-semibold text-white inline-flex items-center justify-center gap-2 hover:opacity-90 transition"
+              style={{ background: "#03C75A" }}
+            >
+              <span className="font-black">N</span> 네이버로 시작하기
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoading("social")}
+              className="w-full rounded-xl py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 border border-border bg-card hover:bg-muted transition"
+            >
+              <span className="font-bold text-[#4285F4]">G</span> Google로 시작하기
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoading("social")}
+              className="w-full rounded-xl py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 hover:opacity-90 transition"
+              style={{ background: "#FEE500", color: "#181600" }}
+            >
+              <span className="font-black">K</span> 카카오로 시작하기
+            </button>
+          </div>
         </main>
 
         <footer className="px-6 py-4 text-center text-[10px] text-muted-foreground">
