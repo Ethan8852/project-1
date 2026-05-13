@@ -146,8 +146,8 @@ export const connectNaverPlace = createServerFn({ method: "POST" })
 
     const userId = await requireUserId();
     await getDB()
-      .prepare("UPDATE users SET naver_place_id = ?, naver_place_url = ?, naver_address = ? WHERE id = ?")
-      .bind(placeId, data.url, address, userId)
+      .prepare("UPDATE users SET naver_place_id = ?, naver_place_url = ?, naver_address = ?, naver_place_name = ? WHERE id = ?")
+      .bind(placeId, data.url, address, name, userId)
       .run();
 
     return { placeId, name, address, reviewCount, avgRating };

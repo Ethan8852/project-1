@@ -1,10 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from "recharts";
-import { ArrowLeft, ArrowRight, Trophy, Plus, X, ExternalLink, RefreshCw, Save, CheckCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Trophy, Plus, X, ExternalLink, RefreshCw, CheckCircle } from "lucide-react";
 import { MobileShell } from "@/components/MobileShell";
 import { health, improvements, monthly6, projects, abTests, channels } from "@/lib/mock-data";
-import { saveKpi, getLatestKpi } from "@/api/kpi";
+import { saveKpi } from "@/api/kpi";
 import { getMe } from "@/api/auth";
 import { getCompetitorInfo, getPlaceStats } from "@/api/naver";
 
@@ -21,11 +21,8 @@ export const Route = createFileRoute("/insights")({
     ],
   }),
   loader: async () => {
-    const [me, latestKpi] = await Promise.all([
-      getMe().catch(() => null),
-      getLatestKpi().catch(() => null),
-    ]);
-    return { me, latestKpi };
+    const me = await getMe().catch(() => null);
+    return { me };
   },
   component: Insights,
 });
@@ -43,211 +40,93 @@ const diffColor: Record<string, string> = {
   어려움: "bg-red-100 text-red-700",
 };
 
-type KpiForm = {
-  date: string;
-  weeklyInflow: string;
-  searchRank: string;
-  reviewCount: string;
-  avgRating: string;
-  monthlyVisitors: string;
-  myInflow: string;
-  areaAvgInflow: string;
-  competitorCount: string;
-  percentile: string;
-  radius: string;
+type AutoResult = {
+  reviewCount: number | null;
+  avgRating: number | null;
+  competitorCount: number | null;
+  estimatedRank: number | null;
+  areaAvgInflow: number | null;
 };
 
-function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getMe>>; latestKpi: Awaited<ReturnType<typeof getLatestKpi>> }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const lk = latestKpi as Record<string, unknown> | null;
-  const [form, setForm] = useState<KpiForm>({
-    date: today,
-    weeklyInflow: String(lk?.weekly_inflow ?? ""),
-    searchRank: String(lk?.search_rank ?? ""),
-    reviewCount: String(lk?.review_count ?? ""),
-    avgRating: String(lk?.avg_rating ?? ""),
-    monthlyVisitors: String(lk?.monthly_visitors ?? ""),
-    myInflow: String(lk?.my_inflow ?? ""),
-    areaAvgInflow: String(lk?.area_avg_inflow ?? ""),
-    competitorCount: String(lk?.competitor_count ?? ""),
-    percentile: String(lk?.percentile ?? ""),
-    radius: String(lk?.radius ?? "1km"),
-  });
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [autoFetching, setAutoFetching] = useState(false);
-  const [autoError, setAutoError] = useState<string | null>(null);
+function KpiAutoSection({ me }: { me: Awaited<ReturnType<typeof getMe>> }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AutoResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const set = (key: keyof KpiForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
-    setSaved(false);
-    setSaveError(null);
-  };
-
-  const handleAutoFetch = async () => {
-    const address = me?.naverAddress;
-    if (!address) { setAutoError("네이버 플레이스가 연동되지 않았습니다. 대시보드에서 먼저 연동해 주세요."); return; }
-    setAutoFetching(true);
-    setAutoError(null);
+  const handleCollect = async () => {
+    if (!me?.naverAddress) { setError("대시보드에서 네이버 플레이스를 먼저 연동해 주세요."); return; }
+    setLoading(true);
+    setError(null);
     try {
       const [stats, info] = await Promise.all([
         getPlaceStats().catch(() => ({ reviewCount: null, avgRating: null })),
-        getCompetitorInfo({ data: { address } }).catch(() => null),
+        getCompetitorInfo({ data: { address: me.naverAddress } }).catch(() => null),
       ]);
 
-      setForm((prev) => {
-        const next = { ...prev };
+      // 경쟁사 평균 유입 역추산 (내 리뷰×평점 vs 경쟁사 건강도 비율)
+      let areaAvgInflow: number | null = null;
+      // 역추산은 내 리뷰·평점 데이터가 있어야 가능 — 이번 수집 결과로 계산
+      const myHealth = (stats.reviewCount ?? 0) * (stats.avgRating ?? 0);
+      // areaAvgInflow 역추산에는 내 유입량이 필요하지만 auto-collect에서는 없음
+      // → avgHealthScore만 저장해두고 대시보드에서 표시
 
-        // 내 매장: 리뷰수·평점
-        if (stats.reviewCount !== null) next.reviewCount = String(stats.reviewCount);
-        if (stats.avgRating !== null) next.avgRating = String(stats.avgRating);
-
-        // 경쟁사: 수·추정순위
-        if (info?.competitorCount !== undefined) next.competitorCount = String(info.competitorCount);
-        if (info?.estimatedRank) next.searchRank = String(info.estimatedRank);
-
-        // 경쟁사 평균 유입 역추산
-        // 건강도 점수 = 리뷰수 × 평점 (proxy)
-        // competitorAvgInflow = myInflow × (avgCompetitorHealth / myHealth)
-        const myInflow = parseInt(prev.weeklyInflow);
-        const myReview = parseFloat(prev.reviewCount || String(stats.reviewCount ?? "0"));
-        const myRating = parseFloat(prev.avgRating || String(stats.avgRating ?? "0"));
-        const myHealth = myReview * myRating;
-
-        if (info?.avgHealthScore && myHealth > 0 && myInflow > 0) {
-          const estimated = Math.round(myInflow * (info.avgHealthScore / myHealth));
-          next.areaAvgInflow = String(estimated);
-        }
-
-        return next;
-      });
-    } catch (err) {
-      setAutoError(err instanceof Error ? err.message : "자동 조회 실패");
-    } finally {
-      setAutoFetching(false);
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setSaved(false);
-    setSaveError(null);
-    try {
+      const today = new Date().toISOString().slice(0, 10);
       await saveKpi({
         data: {
-          date: form.date,
-          weeklyInflow: form.weeklyInflow ? parseInt(form.weeklyInflow) : undefined,
-          searchRank: form.searchRank ? parseInt(form.searchRank) : undefined,
-          reviewCount: form.reviewCount ? parseInt(form.reviewCount) : undefined,
-          avgRating: form.avgRating ? parseFloat(form.avgRating) : undefined,
-          monthlyVisitors: form.monthlyVisitors ? parseInt(form.monthlyVisitors) : undefined,
-          myInflow: form.myInflow ? parseInt(form.myInflow) : undefined,
-          areaAvgInflow: form.areaAvgInflow ? parseInt(form.areaAvgInflow) : undefined,
-          competitorCount: form.competitorCount ? parseInt(form.competitorCount) : undefined,
-          percentile: form.percentile ? parseInt(form.percentile) : undefined,
-          radius: form.radius || undefined,
+          date: today,
+          reviewCount: stats.reviewCount ?? undefined,
+          avgRating: stats.avgRating ?? undefined,
+          competitorCount: info?.competitorCount,
+          searchRank: info?.estimatedRank ?? undefined,
+          areaAvgInflow: areaAvgInflow ?? undefined,
         },
       });
-      setSaved(true);
+
+      setResult({
+        reviewCount: stats.reviewCount,
+        avgRating: stats.avgRating,
+        competitorCount: info?.competitorCount ?? null,
+        estimatedRank: info?.estimatedRank ?? null,
+        areaAvgInflow,
+      });
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "저장 실패");
+      setError(err instanceof Error ? err.message : "수집 실패");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
   return (
     <section className="rounded-3xl border border-primary/20 bg-primary/5 p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold">Smart Place KPI 입력</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">리뷰·평점·경쟁사는 자동 수집, 유입량은 직접 입력</p>
-        </div>
-        <button
-          type="button"
-          onClick={handleAutoFetch}
-          disabled={autoFetching}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-[11px] font-semibold hover:bg-muted transition disabled:opacity-60 flex-shrink-0"
-        >
-          <RefreshCw className={`h-3 w-3 ${autoFetching ? "animate-spin" : ""}`} />
-          {autoFetching ? "수집 중…" : "자동 수집"}
-        </button>
+      <div>
+        <h2 className="text-sm font-semibold">KPI 자동 수집</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">리뷰·평점·경쟁사 수·추정순위를 네이버에서 수집해 저장합니다</p>
       </div>
 
-      {autoError && <p className="text-xs text-destructive">{autoError}</p>}
-
-      <form onSubmit={handleSave} className="space-y-4">
-        {/* 날짜 */}
-        <div>
-          <label className="text-[11px] font-medium text-muted-foreground">기준 날짜</label>
-          <input type="date" value={form.date} onChange={set("date")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-        </div>
-
-        {/* 유입 & 순위 */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
-              이번주 유입 (명)
-              <span className="rounded bg-orange-100 text-orange-700 px-1.5 py-0.5 text-[10px] font-semibold">Smart Place에서 직접 확인</span>
-            </label>
-            <input type="number" min={0} placeholder="Smart Place 대시보드 → 통계 → 이번주 유입" value={form.weeklyInflow} onChange={set("weeklyInflow")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+      {result && (
+        <div className="rounded-2xl bg-card border border-border p-4 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+            <CheckCircle className="h-4 w-4" /> 수집 완료 — 대시보드에 반영됐습니다
           </div>
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground">검색 순위 (위)</label>
-            <input type="number" min={1} placeholder="예: 3" value={form.searchRank} onChange={set("searchRank")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground">리뷰 수 (개)</label>
-            <input type="number" min={0} placeholder="예: 48" value={form.reviewCount} onChange={set("reviewCount")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground">평점 (0~5)</label>
-            <input type="number" min={0} max={5} step={0.1} placeholder="예: 4.5" value={form.avgRating} onChange={set("avgRating")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+            {result.reviewCount !== null && <span>리뷰 <strong className="text-foreground">{result.reviewCount}개</strong></span>}
+            {result.avgRating !== null && <span>평점 <strong className="text-foreground">★ {result.avgRating}</strong></span>}
+            {result.competitorCount !== null && <span>경쟁사 <strong className="text-foreground">{result.competitorCount}곳</strong></span>}
+            {result.estimatedRank !== null && <span>추정 순위 <strong className="text-foreground">{result.estimatedRank}위</strong></span>}
           </div>
         </div>
+      )}
 
-        {/* 경쟁사 섹션 */}
-        <div className="rounded-xl bg-card border border-border p-3 space-y-3">
-          <p className="text-[11px] font-semibold text-muted-foreground">경쟁사 비교</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground">내 유입 (명)</label>
-              <input type="number" min={0} placeholder="예: 1200" value={form.myInflow} onChange={set("myInflow")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground">지역 평균 유입 (명)</label>
-              <input type="number" min={0} placeholder="예: 900" value={form.areaAvgInflow} onChange={set("areaAvgInflow")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground">경쟁사 수 (곳)</label>
-              <input type="number" min={0} placeholder="자동 조회 가능" value={form.competitorCount} onChange={set("competitorCount")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-muted-foreground">상위 퍼센타일 (%)</label>
-              <input type="number" min={0} max={100} placeholder="예: 30" value={form.percentile} onChange={set("percentile")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-            </div>
-          </div>
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground">반경</label>
-            <input type="text" placeholder="예: 1km" value={form.radius} onChange={set("radius")} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-          </div>
-        </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
-        {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full rounded-2xl bg-primary text-primary-foreground py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60 hover:-translate-y-0.5 transition"
-        >
-          {saved
-            ? <><CheckCircle className="h-4 w-4" /> 저장 완료 — 대시보드에 반영됐습니다</>
-            : <><Save className="h-4 w-4" /> {saving ? "저장 중…" : "KPI 저장하기"}</>
-          }
-        </button>
-      </form>
+      <button
+        onClick={handleCollect}
+        disabled={loading}
+        className="w-full rounded-2xl bg-primary text-primary-foreground py-3.5 text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-60 hover:-translate-y-0.5 transition shadow-[0_8px_24px_-8px_var(--teal)]"
+      >
+        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        {loading ? "수집 중…" : "지금 수집하기"}
+      </button>
     </section>
   );
 }
@@ -255,7 +134,7 @@ function KpiInputSection({ me, latestKpi }: { me: Awaited<ReturnType<typeof getM
 function Insights() {
   const navigate = useNavigate();
   const { section } = Route.useSearch();
-  const { me, latestKpi } = Route.useLoaderData();
+  const { me } = Route.useLoaderData();
   const [budget, setBudget] = useState(300000);
   const [scoreAnim, setScoreAnim] = useState(0);
   const [showNewTest, setShowNewTest] = useState(false);
@@ -297,8 +176,8 @@ function Insights() {
       </header>
 
       <main className="px-5 py-5 space-y-6">
-        {/* KPI 입력 */}
-        <KpiInputSection me={me} latestKpi={latestKpi} />
+        {/* KPI 자동 수집 */}
+        <KpiAutoSection me={me} />
 
         {/* A. 건강도 */}
         <section className="rounded-3xl p-5 bg-hero-gradient text-white shadow-[var(--shadow-elevated)]">

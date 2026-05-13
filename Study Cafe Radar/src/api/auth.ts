@@ -98,9 +98,9 @@ export const getMe = createServerFn({ method: "GET" }).handler(async () => {
   const payload = await verifyJWT(token, getEnv().JWT_SECRET);
   if (!payload) return null;
 
-  type UserRow = { id: string; email: string; store_name: string; naver_place_id: string | null; naver_address: string | null };
+  type UserRow = { id: string; email: string; store_name: string; naver_place_id: string | null; naver_address: string | null; naver_place_name: string | null };
   const user = await getDB()
-    .prepare("SELECT id, email, store_name, naver_place_id, naver_address FROM users WHERE id = ?")
+    .prepare("SELECT id, email, store_name, naver_place_id, naver_address, naver_place_name FROM users WHERE id = ?")
     .bind(payload.sub)
     .first<UserRow>();
   if (!user) return null;
@@ -111,5 +111,6 @@ export const getMe = createServerFn({ method: "GET" }).handler(async () => {
     storeName: user.store_name,
     naverPlaceId: user.naver_place_id,
     naverAddress: user.naver_address,
+    naverPlaceName: user.naver_place_name,
   };
 });

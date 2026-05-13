@@ -176,7 +176,12 @@ function Dashboard() {
             </button>
           </div>
         </div>
-        <h1 className="text-xl font-bold leading-tight drop-shadow-sm">{storeName}</h1>
+        <h1 className="text-xl font-bold leading-tight drop-shadow-sm">
+          {storeName}
+          {me.naverPlaceName && (
+            <span className="ml-2 text-sm font-medium opacity-80">{me.naverPlaceName}</span>
+          )}
+        </h1>
         <div className="mt-1 flex items-center gap-2 text-xs opacity-90">
           <span>{today}</span>
           {!kpi && (
