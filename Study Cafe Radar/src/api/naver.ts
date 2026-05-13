@@ -38,6 +38,43 @@ export const searchNaverPlace = createServerFn({ method: "GET" })
     }));
   });
 
+export const getCompetitorInfo = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ address: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { getDB, getEnv } = await import("../runtime/context");
+    const { requireUserId } = await import("./auth");
+    const env = getEnv();
+    const userId = await requireUserId();
+
+    const user = await getDB()
+      .prepare("SELECT naver_place_id FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ naver_place_id: string | null }>();
+
+    const areaMatch = data.address.match(/([가-힣]+(?:구|군))/);
+    const area = areaMatch ? areaMatch[0] : data.address.split(" ").slice(0, 2).join(" ");
+
+    const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(`스터디카페 ${area}`)}&display=20&sort=comment`;
+    const res = await fetch(url, {
+      headers: {
+        "X-Naver-Client-Id": env.NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": env.NAVER_CLIENT_SECRET,
+      },
+    });
+    if (!res.ok) throw new Error(`네이버 API 오류 (${res.status})`);
+
+    const json = (await res.json()) as { items: NaverLocalItem[]; total: number };
+    const items = json.items;
+
+    let estimatedRank: number | null = null;
+    if (user?.naver_place_id) {
+      const idx = items.findIndex((item) => item.link.includes(user.naver_place_id!));
+      if (idx !== -1) estimatedRank = idx + 1;
+    }
+
+    return { competitorCount: Math.min(json.total, 20), estimatedRank, area };
+  });
+
 export const linkNaverPlace = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({

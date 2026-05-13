@@ -114,9 +114,17 @@ function Dashboard() {
 
       <main className="px-5 pt-5 space-y-6">
         {/* KPI 없을 때 안내 */}
-        {!kpi && (
-          <div className="rounded-2xl bg-primary/5 border border-primary/20 px-4 py-3 text-sm text-primary">
-            💡 아직 KPI 데이터가 없습니다. Insights 탭에서 오늘의 수치를 입력해 주세요.
+        {!kpi ? (
+          <Link
+            to="/insights"
+            className="block rounded-2xl bg-primary/5 border border-primary/20 px-4 py-3 text-sm text-primary"
+          >
+            💡 아직 KPI 데이터가 없습니다. 탭해서 수치를 입력하세요 →
+          </Link>
+        ) : (
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>마지막 업데이트: {(latestKpi as { date: string }).date}</span>
+            <Link to="/insights" className="font-semibold text-primary hover:underline">KPI 업데이트 →</Link>
           </div>
         )}
 
