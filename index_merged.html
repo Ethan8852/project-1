@@ -1390,7 +1390,7 @@ let currentModalDate=null;
 let modalEditInfo=null;
 
 // ══ Firebase ══
-let _db=null,_auth=null,currentUser=null,_saveDebounce=null;
+let _db=null,_auth=null,currentUser=null,_saveDebounce=null,_unsubscribeFirestore=null;
 const FIREBASE_CONFIG={
   apiKey:'AIzaSyBrARQuuYF3jYp4J3myWA-26Ya58uRz8Y4',
   authDomain:'todotoday-b0b9a.firebaseapp.com',
@@ -1437,6 +1437,7 @@ function signInWithGoogle(){
   });
 }
 function signOut(){
+  if(_unsubscribeFirestore){_unsubscribeFirestore();_unsubscribeFirestore=null;}
   if(!_auth)return;
   _auth.signOut();
   showToast('로그아웃됐어요.');
@@ -1495,24 +1496,46 @@ async function loadFromFirestore(){
   try{
     setSyncDot('syncing');
     const ref=_db.doc(`users/${currentUser.uid}/state/data`);
-    const snap=await ref.get();
+    // source:'server' 로 캐시 무시, 항상 최신 서버 데이터를 가져옴
+    const snap=await ref.get({source:'server'}).catch(()=>ref.get());
     if(snap.exists){
       const remote=snap.data();
-      if(!state.savedAt||remote.savedAt>state.savedAt){
-        Object.assign(state,remote);
-        try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
-        checkDayTransition();
-        render();renderLongTasks();updateProgress();
-        if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
-        if(document.getElementById('panel-done').classList.contains('active'))renderDone();
-        showToast('☁️ 클라우드에서 데이터를 불러왔어요','success');
-      }
-    }else if(state.tasks.length>0||state.doneTasks.length>0||state.longTasks.length>0){
+      Object.assign(state,remote);
+      try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
+      checkDayTransition();
+      render();renderLongTasks();updateProgress();
+      if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+      if(document.getElementById('panel-done').classList.contains('active'))renderDone();
+      showToast('☁️ 클라우드에서 데이터를 불러왔어요','success');
+    }else if(state.tasks.length>0||state.doneTasks.length>0||(state.longTasks&&state.longTasks.length>0)){
       await saveToFirestore();
       showToast('☁️ 기존 데이터를 클라우드에 백업했어요!','success');
     }
     setSyncDot('ok');
-  }catch(e){setSyncDot('off');console.warn('Firestore load err:',e);}
+    _subscribeFirestore();
+  }catch(e){setSyncDot('off');console.warn('Firestore load err:',e);showToast('⚠️ 클라우드 연결 실패. 오프라인 데이터로 작동 중');}
+}
+
+// 실시간 구독 - 다른 기기 변경 사항을 자동으로 반영
+function _subscribeFirestore(){
+  if(!currentUser||!_db)return;
+  if(_unsubscribeFirestore){_unsubscribeFirestore();_unsubscribeFirestore=null;}
+  const ref=_db.doc(`users/${currentUser.uid}/state/data`);
+  _unsubscribeFirestore=ref.onSnapshot(snap=>{
+    // hasPendingWrites: 아직 서버에 쓰는 중인 스냅샷은 무시 (내 변경사항 echo 방지)
+    if(!snap.exists||snap.metadata.hasPendingWrites)return;
+    const remote=snap.data();
+    // 내 마지막 저장(state.savedAt)보다 더 새로운 데이터일 때만 적용
+    // (같은 값이면 내가 방금 저장한 echo이므로 무시)
+    if(remote.savedAt>state.savedAt){
+      Object.assign(state,remote);
+      try{localStorage.setItem('ijma_v3',JSON.stringify(state));}catch(e){}
+      render();renderLongTasks();updateProgress();
+      if(document.getElementById('panel-cal').classList.contains('active'))renderCal();
+      if(document.getElementById('panel-done').classList.contains('active'))renderDone();
+      showToast('📡 다른 기기에서 변경사항을 불러왔어요');
+    }
+  },e=>console.warn('Firestore snapshot err:',e));
 }
 async function saveToFirestore(){
   if(!currentUser||!_db)return;
@@ -1693,6 +1716,7 @@ function render(){
     list.innerHTML=sorted.map(t=>{
       const overdue=isOverdue(t.registeredAt);
       const isPending=!!pendingComplete[t.id];
+      const pendingElapsed=isPending?(Date.now()-pendingComplete[t.id].startedAt)/1000:0;
       const isEditing=editingId===t.id;
       const textEl=isEditing
         ?`<input class="task-edit-input" id="edit-${t.id}" value="${escapeHtml(t.text)}"
@@ -1707,7 +1731,7 @@ function render(){
         ondragend="onTaskDragEnd(event,${t.id})"
         ondrop="onTaskDrop(event,${t.id})"
       >
-        ${isPending?'<div class="pending-bar"></div>':''}
+        ${isPending?`<div class="pending-bar" style="animation-delay:-${pendingElapsed.toFixed(3)}s"></div>`:''}
         <div class="check-btn${isPending?' pending-state':''}" onclick="startComplete(${t.id})" title="${isPending?'취소':'완료'}">${isPending?'×':''}</div>
         <div class="task-info">
           ${textEl}
@@ -2064,7 +2088,7 @@ function startComplete(id){
   if(editingId===id)return;
   if(pendingComplete[id]){clearTimeout(pendingComplete[id].timerId);delete pendingComplete[id];render();return;}
   const timerId=setTimeout(()=>{delete pendingComplete[id];completeTask(id);},1000);
-  pendingComplete[id]={timerId};render();
+  pendingComplete[id]={timerId,startedAt:Date.now()};render();
 }
 function completeTask(id){
   const idx=state.tasks.findIndex(t=>t.id===id);if(idx===-1)return;
@@ -2662,7 +2686,7 @@ function setLongStage(id,targetStage){
 function startLongComplete(id){
   if(pendingLongComplete[id]){clearTimeout(pendingLongComplete[id].timerId);delete pendingLongComplete[id];renderLongTasks();return;}
   const timerId=setTimeout(()=>{delete pendingLongComplete[id];_doCompleteLong(id);},1000);
-  pendingLongComplete[id]={timerId};renderLongTasks();
+  pendingLongComplete[id]={timerId,startedAt:Date.now()};renderLongTasks();
 }
 function _doCompleteLong(id){
   const t=(state.longTasks||[]).find(t=>t.id===id);if(!t)return;
@@ -2708,6 +2732,7 @@ function renderLongTasks(){
   let html=`<div class="long-section-label">📌 장기 업무 <span style="font-size:12px;color:#AEAEB2;font-weight:400">· 단계별 완료</span></div><div class="task-list">`;
   html+=state.longTasks.map(t=>{
     const isPend=!!pendingLongComplete[t.id];
+    const longPendElapsed=isPend?(Date.now()-pendingLongComplete[t.id].startedAt)/1000:0;
     const sc=t.stage>0?`s${t.stage}`:'';
     const icon=isPend?'…':(t.stage===0?'→':t.stage===1?'②':t.stage===2?'③':'✓');
     const steps=[1,2,3].map(s=>{
@@ -2728,7 +2753,7 @@ function renderLongTasks(){
       draggable="true"
       ondragstart="onLongDragStart(event,${t.id})"
       ondragend="onLongDragEnd(event,${t.id})">
-      ${isPend?'<div class="pending-bar"></div>':''}
+      ${isPend?`<div class="pending-bar" style="animation-delay:-${longPendElapsed.toFixed(3)}s"></div>`:''}
       <div class="long-task-top">
         <div class="long-check-btn ${sc}" onclick="advanceLongStage(${t.id})" title="${t.stage===3?'완료 (1초)':'다음 단계'}">${icon}</div>
         <div class="task-info">
