@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  전역 CSS 최소화 — 시니어 UI 스타일은 절대 여기에 넣지 말 것.
+  (22pt 폰트, 80px 버튼 등은 각 컴포넌트 Tailwind 클래스로 격리)
+*/
+
+html,
+body {
+  height: 100%;
+  background-color: #fff8f0; /* seoro-on 기본 배경 */
+}

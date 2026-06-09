@@ -1,0 +1,22 @@
+{
+  "name": "서로ON",
+  "short_name": "서로ON",
+  "description": "어르신의 1년을 한 권의 책으로",
+  "start_url": "/senior/record",
+  "display": "standalone",
+  "background_color": "#FFF8F0",
+  "theme_color": "#F97316",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
