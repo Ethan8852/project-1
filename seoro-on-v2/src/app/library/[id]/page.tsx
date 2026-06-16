@@ -33,14 +33,36 @@ export default function RecordingDetailPage() {
 
   const handleDelete = async () => {
     if (!confirm('이 이야기를 삭제할까요?')) return
-    if (rec?.audio_path) {
-      await supabase.storage.from('audio').remove([rec.audio_path])
+    try {
+      // 1. Storage 오디오 삭제 시도 (개별 에러 방지)
+      if (rec?.audio_path) {
+        try {
+          const { error: audioErr } = await supabase.storage.from('audio').remove([rec.audio_path])
+          if (audioErr) console.warn('오디오 파일 삭제 실패:', audioErr.message)
+        } catch (err) {
+          console.error('오디오 파일 삭제 중 예외:', err)
+        }
+      }
+      // 2. Storage 이미지 카드 삭제 시도 (개별 에러 방지)
+      if (rec?.card_image_path) {
+        try {
+          const { error: imgErr } = await supabase.storage.from('card-images').remove([rec.card_image_path])
+          if (imgErr) console.warn('이미지 파일 삭제 실패:', imgErr.message)
+        } catch (err) {
+          console.error('이미지 파일 삭제 중 예외:', err)
+        }
+      }
+      // 3. DB recordings 테이블 레코드 삭제
+      const { error: deleteErr } = await supabase.from('recordings').delete().eq('id', id)
+      if (deleteErr) {
+        throw new Error(`DB 삭제 실패: ${deleteErr.message}`)
+      }
+      alert('이야기가 삭제되었습니다.')
+      router.push('/library')
+    } catch (err: any) {
+      console.error('삭제 과정 중 오류:', err)
+      alert(`삭제를 처리하지 못했습니다: ${err?.message || err}`)
     }
-    if (rec?.card_image_path) {
-      await supabase.storage.from('card-images').remove([rec.card_image_path])
-    }
-    await supabase.from('recordings').delete().eq('id', id)
-    router.push('/library')
   }
 
   const regenCard = async (forceRegen = false) => {
