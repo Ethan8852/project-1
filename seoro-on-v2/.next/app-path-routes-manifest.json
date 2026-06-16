@@ -1,0 +1,11 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/api/cardnews/route": "/api/cardnews",
+  "/api/story/route": "/api/story",
+  "/api/stt/route": "/api/stt",
+  "/library/[id]/page": "/library/[id]",
+  "/record/page": "/record",
+  "/page": "/",
+  "/share/[token]/page": "/share/[token]",
+  "/library/page": "/library"
+}

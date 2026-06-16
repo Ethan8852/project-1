@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #FFFDF5;
+}
+
+body {
+  background-color: var(--background);
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #E0903C;
+  cursor: pointer;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(3deg); }
+}
+
+@keyframes custom-pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 0.4; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+@keyframes rotate-slow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-custom-pulse-1 {
+  animation: custom-pulse 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.animate-custom-pulse-2 {
+  animation: custom-pulse 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  animation-delay: 1.2s;
+}
+
+.animate-rotate-slow {
+  animation: rotate-slow 15s linear infinite;
+}

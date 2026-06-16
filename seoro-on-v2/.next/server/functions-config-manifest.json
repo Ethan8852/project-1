@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/story": {
+      "maxDuration": 60
+    },
+    "/api/cardnews": {
+      "maxDuration": 120
+    },
+    "/api/stt": {
+      "maxDuration": 300
+    }
+  }
+}
