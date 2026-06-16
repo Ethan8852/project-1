@@ -52,6 +52,11 @@ export function StoryCard({ imageUrl, storyText, recordingId, shareToken }: Stor
           />
         </div>
 
+        {/* 이야기 텍스트 영역 - 항상 노출 */}
+        <div className="p-5 bg-brand/5 rounded-2xl border border-brand/10 text-gray-700 text-base leading-relaxed whitespace-pre-wrap font-sans">
+          {storyText}
+        </div>
+
         {/* 캡션 및 하단 공유/다운로드 액션 */}
         <div className="flex flex-col gap-3 mt-1">
           <p className="text-xs text-center text-gray-400">AI가 그린 우리 가족 이야기</p>
