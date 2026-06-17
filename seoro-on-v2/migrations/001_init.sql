@@ -80,17 +80,13 @@ BEGIN
 END $$;
 
 -- ============================================================
--- questions 테이블 (기존 유지, 없으면 생성)
+-- questions 테이블 (최신 와이어프레임 스키마 적용)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS questions (
-  id          TEXT PRIMARY KEY,
-  section     TEXT NOT NULL,
-  question    TEXT NOT NULL,
-  color       TEXT DEFAULT '#F97316',
-  created_at  TIMESTAMPTZ DEFAULT now()
+  id              BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  question_id     TEXT, -- 고유 식별 코딩용 키값
+  part_name       TEXT,
+  main_question   TEXT NOT NULL,
+  sub_questions   TEXT[], -- 보조질문 배열
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
-
-CREATE OR REPLACE FUNCTION get_random_questions(n INT DEFAULT 4)
-RETURNS SETOF questions AS $$
-  SELECT * FROM questions ORDER BY random() LIMIT n;
-$$ LANGUAGE sql STABLE;
