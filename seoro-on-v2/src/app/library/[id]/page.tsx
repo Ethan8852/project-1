@@ -69,17 +69,12 @@ export default function RecordingDetailPage() {
     setCardRegen('loading')
     setRegenError(null)
     try {
-      const bodyPayload: any = { recordingId: id }
-      if (forceRegen) {
-        bodyPayload.forceRegen = true
-      }
-      const res = await fetch('/api/cardnews', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload),
+      const { data, error: invokeErr } = await supabase.functions.invoke('process-pipeline', {
+        body: { recordingId: id, action: 'cardnews', forceRegen }
       })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body.error ?? '실패')
+      if (invokeErr || (data && data.error)) {
+        throw new Error(invokeErr?.message || data?.error || '일러스트 카드 생성에 실패했습니다.')
+      }
       setCardRegen('done')
       await fetchRec()
     } catch (err) {

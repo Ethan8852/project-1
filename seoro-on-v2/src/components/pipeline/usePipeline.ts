@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import { supabase } from '@/lib/supabase/client'
 
 export type PipelinePhase =
   | 'idle'
@@ -14,38 +15,36 @@ export function usePipeline() {
   const [phase, setPhase] = useState<PipelinePhase>('idle')
   const [error, setError] = useState<string | null>(null)
 
-  const run = useCallback(async (recordingId: string, audioBlob: Blob) => {
+  const run = useCallback(async (recordingId: string) => {
     setError(null)
 
-    const postJson = async (path: string) => {
-      const res = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordingId }),
-      })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(body.error ?? `${path} 실패 (${res.status})`)
-      return body
-    }
-
     try {
-      // STT: 오디오 blob 직접 전송
+      // 1. STT 변환
       setPhase('stt')
-      const form = new FormData()
-      form.append('audio', audioBlob, 'recording.webm')
-      form.append('recordingId', recordingId)
+      const { data: sttData, error: sttErr } = await supabase.functions.invoke('process-pipeline', {
+        body: { recordingId, action: 'stt' }
+      })
+      if (sttErr || (sttData && sttData.error)) {
+        throw new Error(sttErr?.message || sttData?.error || '음성 텍스트 변환에 실패했습니다.')
+      }
 
-      const sttRes = await fetch('/api/stt', { method: 'POST', body: form })
-      const sttBody = await sttRes.json().catch(() => ({}))
-      if (!sttRes.ok) throw new Error(sttBody.error ?? `STT 실패 (${sttRes.status})`)
-      // warning이 있으면 (STT 실패했지만 다음 단계 진행)
-      if (sttBody.warning) console.warn('[pipeline] STT warning:', sttBody.warning)
-
+      // 2. 스토리 생성
       setPhase('story')
-      await postJson('/api/story')
+      const { data: storyData, error: storyErr } = await supabase.functions.invoke('process-pipeline', {
+        body: { recordingId, action: 'story' }
+      })
+      if (storyErr || (storyData && storyData.error)) {
+        throw new Error(storyErr?.message || storyData?.error || '이야기 작성에 실패했습니다.')
+      }
 
+      // 3. 일러스트 카드 생성
       setPhase('card')
-      await postJson('/api/cardnews')
+      const { data: cardData, error: cardErr } = await supabase.functions.invoke('process-pipeline', {
+        body: { recordingId, action: 'cardnews' }
+      })
+      if (cardErr || (cardData && cardData.error)) {
+        throw new Error(cardErr?.message || cardData?.error || '일러스트 카드 생성에 실패했습니다.')
+      }
 
       setPhase('done')
     } catch (err) {

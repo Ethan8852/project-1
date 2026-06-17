@@ -27,7 +27,7 @@ function RecordContent() {
 
   const handleRecordingDone = (id: string, audioBlob: Blob) => {
     setRecordingId(id)
-    run(id, audioBlob)
+    run(id)
   }
 
   return (
